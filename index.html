@@ -884,12 +884,28 @@
         }
 
         // ============ Tab Navigation ============
+        let hdrTestStarted = false;
+        let gamutTestStarted = false;
+        let cachedCaps = null;
+
+        function startTestForTab(tabId) {
+            if (tabId === 'hdr-test' && !hdrTestStarted && cachedCaps?.webgpuInfo?.hdrCanvasSupported) {
+                hdrTestStarted = true;
+                runHdrTest(cachedCaps.webgpuInfo.device).catch(e => console.error('HDR test error:', e));
+            } else if (tabId === 'gamut-test' && !gamutTestStarted) {
+                gamutTestStarted = true;
+                runGamutTest().catch(e => console.error('Gamut test error:', e));
+            }
+        }
+
         document.querySelectorAll('.tab').forEach(tab => {
             tab.onclick = () => {
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
                 document.getElementById(tab.dataset.tab).classList.add('active');
+                // Start the test for this tab if not already started
+                startTestForTab(tab.dataset.tab);
             };
         });
 
@@ -905,18 +921,16 @@
 
         // ============ Init ============
         async function init() {
-            const caps = await detectCapabilities();
+            cachedCaps = await detectCapabilities();
             updateReport();
 
-            // Start HDR test if supported
-            if (caps.webgpuInfo?.hdrCanvasSupported) {
-                await runHdrTest(caps.webgpuInfo.device);
-            } else {
+            // Show unavailable message if WebGPU HDR not supported
+            if (!cachedCaps.webgpuInfo?.hdrCanvasSupported) {
                 document.getElementById('hdr-unavailable').style.display = 'block';
             }
 
-            // Gamut test always available (uses CSS)
-            await runGamutTest();
+            // Start the test for the initially active tab (HDR)
+            startTestForTab('hdr-test');
         }
 
         init().catch(e => console.error('Init error:', e));
