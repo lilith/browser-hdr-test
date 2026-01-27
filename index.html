@@ -183,7 +183,7 @@
     <!-- HDR Headroom Test -->
     <div id="hdr-test" class="tab-content active">
         <div class="test-section" id="hdr-section" style="display: none;">
-            <h3>HDR Headroom Test</h3>
+            <h3>HDR Headroom Test <span style="font-size: 12px; color: #888; font-weight: normal;">(WebGPU rgba16float + extended)</span></h3>
             <div class="test-phase" id="hdr-phase"></div>
             <p class="test-instruction" id="hdr-instruction">Tap the brighter patch</p>
             <div class="patch-container" id="hdr-patches">
@@ -197,7 +197,10 @@
             </div>
         </div>
         <div id="hdr-unavailable" class="status warning" style="display: none;">
-            HDR test requires WebGPU with extended tone mapping support.
+            HDR test requires WebGPU with rgba16float format and extended tone mapping support.
+        </div>
+        <div id="hdr-method" class="status info" style="display: none;">
+            Testing with: WebGPU canvas (rgba16float format, toneMapping: extended)
         </div>
     </div>
 
@@ -425,6 +428,7 @@
 
         async function runHdrTest(device) {
             document.getElementById('hdr-section').style.display = 'block';
+            document.getElementById('hdr-method').style.display = 'block';
 
             const phaseEl = document.getElementById('hdr-phase');
             const instructionEl = document.getElementById('hdr-instruction');
