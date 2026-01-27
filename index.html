@@ -180,9 +180,9 @@
     <!-- Color Gamut Test -->
     <div id="gamut-test" class="test-content">
         <div class="test-section" id="gamut-section" style="display: none;">
-            <h3>Color Gamut Test</h3>
+            <h3>P3 Gamut Test <span style="font-size: 12px; color: #888; font-weight: normal;">(WebGPU display-p3)</span></h3>
             <div class="test-phase" id="gamut-phase"></div>
-            <p class="test-instruction" id="gamut-instruction">Tap the more saturated/vivid color</p>
+            <p class="test-instruction" id="gamut-instruction">Tap the more saturated color</p>
             <div class="patch-container" id="gamut-patches">
                 <div class="patch" id="gamut-left"></div>
                 <div class="patch" id="gamut-right"></div>
@@ -194,8 +194,8 @@
             </div>
         </div>
         <p style="font-size: 13px; color: #888; margin-top: 16px;">
-            This test shows colors that are outside sRGB but within P3 or Rec.2020.
-            If you can see a difference, your display and browser support that color space.
+            Outputs extended range values (>1.0) that exceed sRGB gamut.
+            sRGB canvas clips to 1.0, P3 canvas can display the extra saturation.
         </p>
     </div>
 
@@ -681,13 +681,13 @@
         }
 
         // ============ Color Gamut Test (WebGPU) ============
-        // Test P3 gamut by rendering same color values with different colorSpace settings
-        // If P3 is working, the display-p3 canvas will show more saturated colors
+        // Output values > 1.0 which are out-of-gamut for sRGB
+        // sRGB canvas clips to 1.0, P3 canvas can show the extra saturation
+        // Both use rgba16float to allow extended range values
         const gamutTestColors = [
-            // Colors at the edge of P3 gamut (saturated primaries)
-            { name: 'P3 Red', rgb: [1.0, 0.0, 0.0] },
-            { name: 'P3 Green', rgb: [0.0, 1.0, 0.0] },
-            { name: 'P3 Cyan', rgb: [0.0, 1.0, 1.0] },
+            { name: 'Extended Red', rgb: [1.22, 0.0, 0.0] },   // P3 red is ~1.22x sRGB red
+            { name: 'Extended Green', rgb: [0.0, 1.16, 0.0] }, // P3 green is ~1.16x sRGB green
+            { name: 'Extended Blue', rgb: [0.0, 0.0, 1.05] },  // P3 blue is ~1.05x sRGB blue
         ];
 
         const gamutPatchShader = `
@@ -703,7 +703,7 @@
             }
         `;
 
-        async function renderGamutPatch(container, device, color, colorSpace) {
+        async function renderGamutPatch(container, device, rgb, colorSpace) {
             container.innerHTML = '';
             const canvas = document.createElement('canvas');
             canvas.width = canvas.height = 256;
@@ -715,7 +715,7 @@
             try {
                 ctx.configure({
                     device,
-                    format: 'rgba8unorm',
+                    format: 'rgba16float', // Allows values > 1.0
                     colorSpace: colorSpace, // 'srgb' or 'display-p3'
                     alphaMode: 'premultiplied',
                 });
@@ -726,7 +726,7 @@
                 size: 16,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
-            device.queue.writeBuffer(paramsBuffer, 0, new Float32Array([color.rgb[0], color.rgb[1], color.rgb[2], 0]));
+            device.queue.writeBuffer(paramsBuffer, 0, new Float32Array([rgb[0], rgb[1], rgb[2], 0]));
 
             const bindGroupLayout = device.createBindGroupLayout({
                 entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }]
@@ -738,7 +738,7 @@
             const pipeline = device.createRenderPipeline({
                 layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
                 vertex: { module, entryPoint: 'vs' },
-                fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] },
+                fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba16float' }] },
                 primitive: { topology: 'triangle-list' }
             });
 
@@ -783,24 +783,23 @@
             let responseHandler = null;
 
             async function showPair(color, swapped = false) {
-                // One patch in P3, one in sRGB - same color values
-                // On P3 display: P3 patch will be more saturated
-                // On sRGB display: both will look the same (clipped)
-                const leftP3 = !swapped;
+                // Same extended RGB values on both canvases, different colorSpace
+                // sRGB canvas clips values > 1.0, P3 canvas can show them
+                const leftIsP3 = !swapped;
                 await Promise.all([
-                    renderGamutPatch(leftEl, device, color, leftP3 ? 'display-p3' : 'srgb'),
-                    renderGamutPatch(rightEl, device, color, leftP3 ? 'srgb' : 'display-p3')
+                    renderGamutPatch(leftEl, device, color.rgb, leftIsP3 ? 'display-p3' : 'srgb'),
+                    renderGamutPatch(rightEl, device, color.rgb, leftIsP3 ? 'srgb' : 'display-p3')
                 ]);
-                return { color, leftP3 };
+                return { color, leftIsP3 };
             }
 
             function handleResponse(choice) {
                 if (!responseHandler || !currentTest) return;
-                const { color, leftP3 } = currentTest;
+                const { color, leftIsP3 } = currentTest;
                 let sawDifference = choice !== 'same';
                 if (sawDifference) {
                     // Check if they picked the P3 one (more saturated = correct)
-                    const pickedP3 = (choice === 'left' && leftP3) || (choice === 'right' && !leftP3);
+                    const pickedP3 = (choice === 'left' && leftIsP3) || (choice === 'right' && !leftIsP3);
                     sawDifference = pickedP3;
                 }
                 responseHandler(sawDifference);
