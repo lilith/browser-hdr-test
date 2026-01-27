@@ -904,13 +904,13 @@
             rightEl.onclick = () => { rightEl.style.opacity = '0.6'; setTimeout(() => rightEl.style.opacity = '1', 100); handleResponse('right'); };
             sameBtn.onclick = () => handleResponse('same');
 
-            // Test each color with 2 trials, each trial has 2 questions (brighter? richer?)
+            // Test each color with 2 trials
             const trialsPerColor = 2;
+            instructionEl.innerHTML = 'Which is <strong>more vivid</strong>?';
 
             for (let i = 0; i < gamutTestColors.length; i++) {
                 const color = gamutTestColors[i];
-                let brighterP3 = 0, brighterSrgb = 0, brighterSame = 0;
-                let richerP3 = 0, richerSrgb = 0, richerSame = 0;
+                let p3Picks = 0, srgbPicks = 0, samePicks = 0;
 
                 for (let trial = 0; trial < trialsPerColor; trial++) {
                     phaseEl.textContent = `${color.name} (${i + 1}/${gamutTestColors.length}) - trial ${trial + 1}/${trialsPerColor}`;
@@ -919,19 +919,10 @@
                     const p3OnLeft = Math.random() < 0.5;
                     currentTest = await showPair(color, !p3OnLeft);
 
-                    // Question 1: Which is brighter?
-                    instructionEl.innerHTML = 'Which is <strong>brighter</strong>?';
-                    const brighterResponse = await new Promise(r => { responseHandler = r; });
-                    if (brighterResponse === 'p3') brighterP3++;
-                    else if (brighterResponse === 'srgb') brighterSrgb++;
-                    else brighterSame++;
-
-                    // Question 2: Which is richer/more saturated? (same patches, don't re-render)
-                    instructionEl.innerHTML = 'Which is <strong>richer / more vivid</strong>?';
-                    const richerResponse = await new Promise(r => { responseHandler = r; });
-                    if (richerResponse === 'p3') richerP3++;
-                    else if (richerResponse === 'srgb') richerSrgb++;
-                    else richerSame++;
+                    const response = await new Promise(r => { responseHandler = r; });
+                    if (response === 'p3') p3Picks++;
+                    else if (response === 'srgb') srgbPicks++;
+                    else samePicks++;
                 }
 
                 stopFlicker();
@@ -939,10 +930,9 @@
                 results.push({
                     color: color.name,
                     tier: color.tier,
-                    brighter: { p3: brighterP3, srgb: brighterSrgb, same: brighterSame },
-                    richer: { p3: richerP3, srgb: richerSrgb, same: richerSame },
-                    // Gamut visible if user consistently picked P3 as richer
-                    sawDifference: richerP3 >= trialsPerColor
+                    picks: { p3: p3Picks, srgb: srgbPicks, same: samePicks },
+                    // Gamut visible if user consistently picked P3 as more vivid
+                    sawDifference: p3Picks >= trialsPerColor
                 });
             }
 
@@ -976,17 +966,13 @@
                 resultText.textContent = text;
                 resultText.style.color = textColor;
 
-                // Show detailed breakdown: brighter vs richer responses
+                // Show results per color
                 const lines = results.map(r => {
-                    const b = r.brighter;
-                    const rich = r.richer;
-                    // Format: "Color: richer✓ (P3:2 sRGB:0 same:0) brighter(P3:0 sRGB:0 same:2)"
-                    const richerStr = `richer(P3:${rich.p3} sRGB:${rich.srgb} =:${rich.same})`;
-                    const brighterStr = `brighter(P3:${b.p3} sRGB:${b.srgb} =:${b.same})`;
+                    const p = r.picks;
                     const icon = r.sawDifference ? '✓' : '–';
-                    return `${r.color} ${icon}: ${richerStr} ${brighterStr}`;
+                    return `${r.color} ${icon}: P3=${p.p3} sRGB=${p.srgb} same=${p.same}`;
                 });
-                resultSummary.innerHTML = lines.map(l => `<div style="font-size:12px;">${l}</div>`).join('');
+                resultSummary.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
 
                 report.gamutTest = { results, p3Working };
                 updateReport();
@@ -1036,13 +1022,10 @@
                 const p3Count = report.gamutTest.results?.filter(r => r.tier === 'p3').length || 0;
                 lines.push(`P3 colors visible: ${report.gamutTest.p3Working}/${p3Count}`);
                 lines.push('');
-                lines.push('Per-color breakdown (brighter/richer responses):');
+                lines.push('Per-color "which is more vivid" responses:');
                 for (const r of report.gamutTest.results || []) {
-                    const b = r.brighter || { p3: 0, srgb: 0, same: 0 };
-                    const rich = r.richer || { p3: 0, srgb: 0, same: 0 };
-                    lines.push(`  ${r.color}: ${r.sawDifference ? 'VISIBLE' : 'same'}`);
-                    lines.push(`    Brighter: P3=${b.p3} sRGB=${b.srgb} same=${b.same}`);
-                    lines.push(`    Richer:   P3=${rich.p3} sRGB=${rich.srgb} same=${rich.same}`);
+                    const p = r.picks || { p3: 0, srgb: 0, same: 0 };
+                    lines.push(`  ${r.color}: ${r.sawDifference ? 'VISIBLE' : 'same'} (P3=${p.p3} sRGB=${p.srgb} same=${p.same})`);
                 }
                 lines.push('');
             }
