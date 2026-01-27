@@ -686,31 +686,30 @@
         }
 
         // ============ Color Gamut Test (WebGPU) ============
-        // Output values > 1.0 which are out-of-gamut for sRGB (and some beyond P3)
-        // sRGB canvas clips, P3 canvas shows more, Rec.2020 would show even more
-        // Both use rgba16float to allow extended range values
+        // Colors chosen so clipping is roughly perpendicular to luminance axis.
+        // Extend blue channel (weight 0.0722) more than green (0.7152) to minimize
+        // luminance shift when clipped. This way difference is primarily saturation.
         const gamutTestColors = [
-            // Primary colors - outside sRGB, within P3
-            { name: 'P3 Red', rgb: [1.22, 0.0, 0.0], tier: 'p3' },
-            { name: 'P3 Green', rgb: [0.0, 1.16, 0.0], tier: 'p3' },
+            // Blue-heavy extensions (blue has low luma weight, so clipping = mostly saturation change)
+            { name: 'Vivid Blue', rgb: [0.2, 0.2, 1.25], tier: 'p3' },
+            { name: 'Electric Violet', rgb: [0.6, 0.1, 1.3], tier: 'p3' },
+            { name: 'Hot Magenta', rgb: [1.15, 0.1, 1.2], tier: 'p3' },
+            { name: 'Deep Cyan', rgb: [0.1, 0.85, 1.2], tier: 'p3' },
 
-            // Secondary colors - different clipping behavior
-            { name: 'P3 Cyan', rgb: [0.0, 1.10, 1.10], tier: 'p3' },
-            { name: 'P3 Yellow', rgb: [1.08, 1.08, 0.0], tier: 'p3' },
-            { name: 'P3 Magenta', rgb: [1.15, 0.0, 1.08], tier: 'p3' },
+            // Red extensions (medium luma weight)
+            { name: 'Vivid Red', rgb: [1.2, 0.15, 0.15], tier: 'p3' },
+            { name: 'Bright Orange', rgb: [1.2, 0.5, 0.1], tier: 'p3' },
 
-            // Saturated oranges/teals - often show biggest P3 advantage
-            { name: 'P3 Orange', rgb: [1.20, 0.55, 0.0], tier: 'p3' },
-            { name: 'P3 Teal', rgb: [0.0, 1.12, 0.75], tier: 'p3' },
+            // Green has highest luma weight - hardest to test without brightness shift
+            { name: 'Vivid Green', rgb: [0.2, 1.15, 0.2], tier: 'p3' },
 
-            // Beyond P3 - into Rec.2020 territory
-            { name: 'Rec.2020 Red', rgb: [1.45, -0.05, -0.05], tier: 'rec2020' },
-            { name: 'Rec.2020 Green', rgb: [-0.10, 1.35, -0.05], tier: 'rec2020' },
-            { name: 'Rec.2020 Cyan', rgb: [-0.08, 1.25, 1.25], tier: 'rec2020' },
+            // Beyond P3 - more extreme blue extensions (still low luma impact)
+            { name: 'Ultra Violet', rgb: [0.5, 0.0, 1.5], tier: 'rec2020' },
+            { name: 'Ultra Cyan', rgb: [0.0, 0.7, 1.5], tier: 'rec2020' },
         ];
 
         const gamutPatchShader = `
-            struct Params { r: f32, g: f32, b: f32, clipAndMatchLuma: f32 }
+            struct Params { r: f32, g: f32, b: f32, _pad: f32 }
             @group(0) @binding(0) var<uniform> params: Params;
             @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
                 let x = f32(i & 1u) * 4.0 - 1.0;
@@ -718,31 +717,11 @@
                 return vec4f(x, y, 0.0, 1.0);
             }
             @fragment fn fs() -> @location(0) vec4f {
-                var rgb = vec3f(params.r, params.g, params.b);
-
-                if (params.clipAndMatchLuma > 0.5) {
-                    // Clip to sRGB range [0,1]
-                    let clipped = clamp(rgb, vec3f(0.0), vec3f(1.0));
-
-                    // Calculate luminance (Rec.709 coefficients)
-                    let origLuma = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
-                    let clippedLuma = dot(clipped, vec3f(0.2126, 0.7152, 0.0722));
-
-                    // Scale clipped to match original luminance (avoid div by zero)
-                    if (clippedLuma > 0.001) {
-                        rgb = clipped * (origLuma / clippedLuma);
-                        // Re-clip in case scaling pushed values over 1
-                        rgb = clamp(rgb, vec3f(0.0), vec3f(1.0));
-                    } else {
-                        rgb = clipped;
-                    }
-                }
-
-                return vec4f(rgb, 1.0);
+                return vec4f(params.r, params.g, params.b, 1.0);
             }
         `;
 
-        async function renderGamutPatch(container, device, rgb, colorSpace, clipAndMatchLuma = false) {
+        async function renderGamutPatch(container, device, rgb, colorSpace) {
             container.innerHTML = '';
             const canvas = document.createElement('canvas');
             canvas.width = canvas.height = 256;
@@ -765,7 +744,7 @@
                 size: 16,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
-            device.queue.writeBuffer(paramsBuffer, 0, new Float32Array([rgb[0], rgb[1], rgb[2], clipAndMatchLuma ? 1.0 : 0.0]));
+            device.queue.writeBuffer(paramsBuffer, 0, new Float32Array([rgb[0], rgb[1], rgb[2], 0]));
 
             const bindGroupLayout = device.createBindGroupLayout({
                 entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }]
@@ -831,12 +810,11 @@
                 const leftIsP3 = !swapped;
 
                 // Render both comparison patches and both flicker canvases
-                // Flicker uses P3 canvas for both, with luminance-matched clipping for the "sRGB" version
                 await Promise.all([
                     renderGamutPatch(leftEl, device, color.rgb, leftIsP3 ? 'display-p3' : 'srgb'),
                     renderGamutPatch(rightEl, device, color.rgb, leftIsP3 ? 'srgb' : 'display-p3'),
-                    renderGamutPatch(flashSrgbEl, device, color.rgb, 'display-p3', true),  // clipped + luma matched
-                    renderGamutPatch(flashP3El, device, color.rgb, 'display-p3', false)    // full P3
+                    renderGamutPatch(flashSrgbEl, device, color.rgb, 'srgb'),
+                    renderGamutPatch(flashP3El, device, color.rgb, 'display-p3')
                 ]);
 
                 // Start flicker by toggling visibility (no re-rendering)
