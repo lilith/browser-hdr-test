@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser HDR & Wide Gamut Test</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        h1, h2 { color: #fff; }
+        h2 { margin-top: 32px; border-top: 1px solid #333; padding-top: 24px; }
+        .status {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-weight: 500;
+        }
+        .status.success { background: #1b4332; color: #95d5b2; }
+        .status.error { background: #442222; color: #f5a5a5; }
+        .status.warning { background: #443322; color: #f5d5a5; }
+        .status.info { background: #223344; color: #a5c5f5; }
+        .details {
+            background: #252525;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+            font-size: 14px;
+        }
+        .details h3 { margin: 0 0 12px 0; color: #fff; }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #333;
+        }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-label { color: #888; }
+        .detail-value { color: #fff; font-family: monospace; }
+        code {
+            background: #333;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .test-section {
+            background: #252525;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+        }
+        .test-section h3 { margin: 0 0 12px 0; color: #fff; }
+        .patch-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .patch {
+            aspect-ratio: 1;
+            cursor: pointer;
+            transition: opacity 0.1s;
+        }
+        .btn-same {
+            display: block;
+            width: 100%;
+            max-width: 500px;
+            margin: 12px auto 0;
+            padding: 18px;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 8px;
+            border: 2px solid #555;
+            background: #333;
+            color: #ccc;
+        }
+        .btn-same:hover { background: #3a3a3a; }
+        .test-phase {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        .test-instruction {
+            font-size: 20px;
+            color: #fff;
+            text-align: center;
+            margin-bottom: 16px;
+            font-weight: 500;
+        }
+        .results {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #444;
+        }
+        .results h4 { margin: 0 0 8px 0; color: #aaa; }
+        .result-text {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+        .result-summary {
+            font-size: 13px;
+            color: #999;
+            font-family: monospace;
+        }
+        #report {
+            width: 100%;
+            height: 250px;
+            font-family: monospace;
+            font-size: 12px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 8px;
+            resize: vertical;
+        }
+        .tab-container {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: #2a2a2a;
+            border: none;
+            border-radius: 8px 8px 0 0;
+            color: #888;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .tab.active {
+            background: #252525;
+            color: #fff;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        a { color: #93c5fd; }
+    </style>
+</head>
+<body>
+    <h1>Browser HDR & Wide Gamut Test</h1>
+    <p style="color: #888; margin-bottom: 20px;">
+        Test your browser's actual HDR brightness headroom and wide color gamut support.
+        <a href="https://github.com/user/browser-hdr-test">GitHub</a> |
+        <a href="BROWSER_HDR_TEST.md">Documentation</a>
+    </p>
+
+    <!-- Android hint -->
+    <div id="android-hint" style="display: none; background: #2a2a4a; border: 1px solid #4a4a8a; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+        <strong style="color: #a5b4fc;">Android Detected</strong>
+        <p style="font-size: 13px; color: #c5c5e5; margin: 8px 0;">
+            <strong>For HDR:</strong> Enable Samsung "Super HDR" in Settings → Advanced Features<br>
+            <strong>For P3 gamut:</strong> Set <code id="flags-url">chrome://flags/#force-color-profile</code> to "Display P3 D65"
+        </p>
+    </div>
+
+    <!-- Capability Detection -->
+    <div class="details" id="capabilities">
+        <h3>Detected Capabilities</h3>
+        <div id="cap-content"></div>
+    </div>
+
+    <!-- Test Tabs -->
+    <div class="tab-container">
+        <button class="tab active" data-tab="hdr-test">HDR Headroom</button>
+        <button class="tab" data-tab="gamut-test">Color Gamut</button>
+    </div>
+
+    <!-- HDR Headroom Test -->
+    <div id="hdr-test" class="tab-content active">
+        <div class="test-section" id="hdr-section" style="display: none;">
+            <h3>HDR Headroom Test</h3>
+            <div class="test-phase" id="hdr-phase"></div>
+            <p class="test-instruction" id="hdr-instruction">Tap the brighter patch</p>
+            <div class="patch-container" id="hdr-patches">
+                <div class="patch" id="hdr-left"></div>
+                <div class="patch" id="hdr-right"></div>
+            </div>
+            <button class="btn-same" id="hdr-same">They look the same brightness</button>
+            <div class="results" id="hdr-results" style="display: none;">
+                <div class="result-text" id="hdr-result-text"></div>
+                <div class="result-summary" id="hdr-result-summary"></div>
+            </div>
+        </div>
+        <div id="hdr-unavailable" class="status warning" style="display: none;">
+            HDR test requires WebGPU with extended tone mapping support.
+        </div>
+    </div>
+
+    <!-- Color Gamut Test -->
+    <div id="gamut-test" class="tab-content">
+        <div class="test-section" id="gamut-section" style="display: none;">
+            <h3>Color Gamut Test</h3>
+            <div class="test-phase" id="gamut-phase"></div>
+            <p class="test-instruction" id="gamut-instruction">Tap the more saturated/vivid color</p>
+            <div class="patch-container" id="gamut-patches">
+                <div class="patch" id="gamut-left"></div>
+                <div class="patch" id="gamut-right"></div>
+            </div>
+            <button class="btn-same" id="gamut-same">They look the same</button>
+            <div class="results" id="gamut-results" style="display: none;">
+                <div class="result-text" id="gamut-result-text"></div>
+                <div class="result-summary" id="gamut-result-summary"></div>
+            </div>
+        </div>
+        <p style="font-size: 13px; color: #888; margin-top: 16px;">
+            This test shows colors that are outside sRGB but within P3 or Rec.2020.
+            If you can see a difference, your display and browser support that color space.
+        </p>
+    </div>
+
+    <!-- Report Section -->
+    <div class="details" style="margin-top: 24px;">
+        <h3>Report <button id="copy-btn" style="margin-left: 10px; padding: 4px 12px; cursor: pointer;">Copy</button></h3>
+        <textarea id="report" readonly></textarea>
+    </div>
+
+    <script>
+        // ============ Capability Detection ============
+        const report = {
+            timestamp: new Date().toISOString(),
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+        };
+
+        function addCap(label, value) {
+            const row = document.createElement('div');
+            row.className = 'detail-row';
+            row.innerHTML = `<span class="detail-label">${label}</span><span class="detail-value">${value}</span>`;
+            document.getElementById('cap-content').appendChild(row);
+        }
+
+        async function detectCapabilities() {
+            // Platform detection
+            const isAndroid = /Android/i.test(navigator.userAgent);
+            if (isAndroid) {
+                document.getElementById('android-hint').style.display = 'block';
+            }
+
+            // Display capabilities
+            const hdrDisplay = matchMedia('(dynamic-range: high)').matches;
+            const p3Gamut = matchMedia('(color-gamut: p3)').matches;
+            const rec2020Gamut = matchMedia('(color-gamut: rec2020)').matches;
+            const dynamicRangeLimit = CSS.supports('dynamic-range-limit', 'no-limit');
+
+            addCap('HDR Display (dynamic-range: high)', hdrDisplay ? 'Yes' : 'No');
+            addCap('P3 Gamut (color-gamut: p3)', p3Gamut ? 'Yes' : 'No');
+            addCap('Rec.2020 Gamut', rec2020Gamut ? 'Yes' : 'No');
+            addCap('CSS dynamic-range-limit', dynamicRangeLimit ? 'Yes' : 'No');
+            addCap('Screen', `${screen.width}x${screen.height} @ ${window.devicePixelRatio}x, ${screen.colorDepth}-bit`);
+
+            report.display = { hdrDisplay, p3Gamut, rec2020Gamut, dynamicRangeLimit };
+
+            // WebGPU detection
+            let webgpuInfo = null;
+            if (navigator.gpu) {
+                try {
+                    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+                    if (adapter) {
+                        const info = adapter.info || await adapter.requestAdapterInfo?.() || {};
+                        const features = Array.from(adapter.features);
+
+                        addCap('WebGPU', 'Available');
+                        addCap('GPU', `${info.vendor || 'Unknown'} ${info.architecture || ''}`);
+                        addCap('shader-f16', features.includes('shader-f16') ? 'Yes' : 'No');
+
+                        // Test HDR canvas support
+                        const device = await adapter.requestDevice();
+                        const testCanvas = document.createElement('canvas');
+                        const ctx = testCanvas.getContext('webgpu');
+                        let hdrCanvasSupported = false;
+
+                        if (ctx) {
+                            try {
+                                ctx.configure({
+                                    device,
+                                    format: 'rgba16float',
+                                    toneMapping: { mode: 'extended' }
+                                });
+                                hdrCanvasSupported = true;
+                            } catch (e) {}
+                        }
+
+                        addCap('HDR Canvas (rgba16float + extended)', hdrCanvasSupported ? 'Yes' : 'No');
+
+                        webgpuInfo = { adapter, device, hdrCanvasSupported, features };
+                        report.webgpu = { available: true, hdrCanvas: hdrCanvasSupported, gpu: info };
+                    }
+                } catch (e) {
+                    addCap('WebGPU', `Error: ${e.message}`);
+                }
+            } else {
+                addCap('WebGPU', 'Not available');
+            }
+
+            return { hdrDisplay, p3Gamut, rec2020Gamut, webgpuInfo };
+        }
+
+        // ============ HDR Headroom Test ============
+        const hdrPatchShader = `
+            struct Params { brightness: f32, _pad: f32 }
+            @group(0) @binding(0) var<uniform> params: Params;
+            @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+                let x = f32(i & 1u) * 4.0 - 1.0;
+                let y = f32((i >> 1u) & 1u) * 4.0 - 1.0;
+                return vec4f(x, y, 0.0, 1.0);
+            }
+            @fragment fn fs() -> @location(0) vec4f {
+                let b = params.brightness;
+                return vec4f(b, b, b, 1.0);
+            }
+        `;
+
+        async function renderHdrPatch(container, device, brightness) {
+            container.innerHTML = '';
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 256;
+            canvas.style.cssText = 'width: 100%; height: 100%; display: block;';
+
+            const ctx = canvas.getContext('webgpu');
+            if (!ctx) return null;
+
+            try {
+                ctx.configure({
+                    device,
+                    format: 'rgba16float',
+                    toneMapping: { mode: 'extended' },
+                    alphaMode: 'premultiplied',
+                });
+            } catch (e) { return null; }
+
+            const module = device.createShaderModule({ code: hdrPatchShader });
+            const paramsBuffer = device.createBuffer({
+                size: 8,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
+            device.queue.writeBuffer(paramsBuffer, 0, new Float32Array([brightness, 0]));
+
+            const bindGroupLayout = device.createBindGroupLayout({
+                entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }]
+            });
+            const bindGroup = device.createBindGroup({
+                layout: bindGroupLayout,
+                entries: [{ binding: 0, resource: { buffer: paramsBuffer } }]
+            });
+            const pipeline = device.createRenderPipeline({
+                layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+                vertex: { module, entryPoint: 'vs' },
+                fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba16float' }] },
+                primitive: { topology: 'triangle-list' }
+            });
+
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginRenderPass({
+                colorAttachments: [{
+                    view: ctx.getCurrentTexture().createView(),
+                    clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                    loadOp: 'clear', storeOp: 'store'
+                }]
+            });
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.draw(3);
+            pass.end();
+            device.queue.submit([encoder.finish()]);
+
+            container.appendChild(canvas);
+            return canvas;
+        }
+
+        async function runHdrTest(device) {
+            document.getElementById('hdr-section').style.display = 'block';
+
+            const phaseEl = document.getElementById('hdr-phase');
+            const instructionEl = document.getElementById('hdr-instruction');
+            const leftEl = document.getElementById('hdr-left');
+            const rightEl = document.getElementById('hdr-right');
+            const sameBtn = document.getElementById('hdr-same');
+            const resultsEl = document.getElementById('hdr-results');
+
+            const results = {};
+            const testedPairs = [];
+            let currentTest = null;
+            let responseHandler = null;
+
+            function key(low, high) { return `${low.toFixed(2)}->${high.toFixed(2)}`; }
+
+            async function showPair(low, high, swapped = false) {
+                const left = swapped ? high : low;
+                const right = swapped ? low : high;
+                leftEl.style.opacity = rightEl.style.opacity = '0.3';
+                await Promise.all([
+                    renderHdrPatch(leftEl, device, left),
+                    renderHdrPatch(rightEl, device, right)
+                ]);
+                leftEl.style.opacity = rightEl.style.opacity = '1';
+                return { left, right, low, high, swapped };
+            }
+
+            function recordVote(low, high, vote) {
+                const k = key(low, high);
+                if (!results[k]) {
+                    results[k] = { low, high, votes: { higher: 0, same: 0 } };
+                    testedPairs.push({ low, high });
+                }
+                results[k].votes[vote]++;
+            }
+
+            function getResult(low, high) {
+                const r = results[key(low, high)];
+                if (!r) return null;
+                return r.votes.higher > r.votes.same ? 'higher' : 'same';
+            }
+
+            async function testPair(low, high, count = 1) {
+                let higherCount = 0, sameCount = 0;
+                for (let i = 0; i < count; i++) {
+                    currentTest = await showPair(low, high, i % 2 === 0);
+                    const response = await new Promise(r => { responseHandler = r; });
+                    recordVote(low, high, response);
+                    if (response === 'higher') higherCount++; else sameCount++;
+                }
+                return higherCount > sameCount ? 'higher' : 'same';
+            }
+
+            function handleResponse(choice) {
+                if (!responseHandler || !currentTest) return;
+                const { left, high } = currentTest;
+                let result = choice === 'same' ? 'same' :
+                    (choice === 'left' ? (left === high ? 'higher' : 'same') : (left === high ? 'same' : 'higher'));
+                responseHandler(result);
+                responseHandler = null;
+                currentTest = null;
+            }
+
+            leftEl.onclick = () => { leftEl.style.opacity = '0.6'; setTimeout(() => leftEl.style.opacity = '1', 100); handleResponse('left'); };
+            rightEl.onclick = () => { rightEl.style.opacity = '0.6'; setTimeout(() => rightEl.style.opacity = '1', 100); handleResponse('right'); };
+            sameBtn.onclick = () => handleResponse('same');
+
+            // Run test
+            phaseEl.textContent = 'Step 1: Baseline';
+            let result = await testPair(0.5, 1.0, 1);
+            if (result !== 'higher') result = await testPair(0.5, 1.0, 1);
+            if (getResult(0.5, 1.0) !== 'higher') {
+                showHdrResults('invalid');
+                return;
+            }
+
+            phaseEl.textContent = 'Step 2: Finding range...';
+            let lowerBound = 1.0, upperBound = null;
+            for (const high of [2.0, 3.0, 4.0]) {
+                result = await testPair(high - 1.0, high, 1);
+                if (result === 'same') { upperBound = high; break; }
+                else lowerBound = high;
+            }
+
+            if (upperBound !== null) {
+                phaseEl.textContent = 'Step 3: Refining...';
+                let searchLow = lowerBound, searchHigh = upperBound;
+                while (searchHigh - searchLow > 0.25) {
+                    const mid = Math.round((searchLow + searchHigh) * 2) / 4;
+                    phaseEl.textContent = `Refining: ${mid}x...`;
+                    result = await testPair(mid - 0.25, mid, 1);
+                    if (result === 'higher') searchLow = mid; else searchHigh = mid;
+                }
+                phaseEl.textContent = `Confirming ${searchLow}x...`;
+                await testPair(searchLow, searchLow + 0.25, 2);
+                showHdrResults(searchLow);
+            } else {
+                phaseEl.textContent = 'Confirming full range...';
+                await testPair(3.0, 4.0, 2);
+                showHdrResults(4.0);
+            }
+
+            function showHdrResults(headroom) {
+                sameBtn.style.display = 'none';
+                leftEl.innerHTML = rightEl.innerHTML = '';
+                leftEl.style.cursor = rightEl.style.cursor = 'default';
+                phaseEl.textContent = '';
+                instructionEl.textContent = 'Test complete!';
+                resultsEl.style.display = 'block';
+
+                const resultText = document.getElementById('hdr-result-text');
+                const resultSummary = document.getElementById('hdr-result-summary');
+
+                let text, color;
+                if (headroom === 'invalid') {
+                    text = '⚠️ Test invalid'; color = '#f5d5a5';
+                } else if (headroom <= 1.0) {
+                    text = '❌ HDR NOT working (1.0x)'; color = '#f5a5a5';
+                } else if (headroom >= 4.0) {
+                    text = '✅ Full HDR (≥4.0x)'; color = '#95d5b2';
+                } else {
+                    text = `✅ HDR working (${headroom}x)`; color = '#95d5b2';
+                }
+                resultText.textContent = text;
+                resultText.style.color = color;
+
+                const lines = testedPairs.map(({ low, high }) => {
+                    const r = results[key(low, high)];
+                    const res = getResult(low, high);
+                    return `${high}x ${res === 'higher' ? '>' : '='} ${low}x (${r.votes.higher}/${r.votes.same})`;
+                });
+                resultSummary.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
+
+                report.hdrTest = { headroom, transitions: testedPairs.map(p => ({ ...p, result: getResult(p.low, p.high) })) };
+                updateReport();
+            }
+        }
+
+        // ============ Color Gamut Test ============
+        // Colors outside sRGB but within P3 or Rec.2020
+        const gamutTestColors = [
+            // P3 colors (outside sRGB)
+            { name: 'P3 Red', p3: [1, 0.2, 0.2], srgb: [1, 0.35, 0.35], space: 'p3' },
+            { name: 'P3 Green', p3: [0.2, 1, 0.2], srgb: [0.35, 0.9, 0.35], space: 'p3' },
+            { name: 'P3 Cyan', p3: [0, 1, 1], srgb: [0.3, 0.95, 0.95], space: 'p3' },
+            { name: 'P3 Orange', p3: [1, 0.5, 0], srgb: [1, 0.55, 0.2], space: 'p3' },
+            // Rec.2020 colors (outside P3)
+            { name: 'Rec.2020 Green', p3: [0, 1, 0], srgb: [0.4, 0.85, 0.4], space: 'rec2020' },
+            { name: 'Rec.2020 Cyan', p3: [0, 1, 0.9], srgb: [0.35, 0.9, 0.85], space: 'rec2020' },
+        ];
+
+        function renderGamutPatch(container, color, useWideGamut) {
+            container.innerHTML = '';
+            const div = document.createElement('div');
+            div.style.cssText = 'width: 100%; height: 100%;';
+
+            if (useWideGamut) {
+                // Use CSS color() function for P3
+                div.style.backgroundColor = `color(display-p3 ${color.p3.join(' ')})`;
+            } else {
+                // Clipped sRGB version
+                div.style.backgroundColor = `rgb(${color.srgb.map(c => Math.round(c * 255)).join(',')})`;
+            }
+
+            container.appendChild(div);
+        }
+
+        async function runGamutTest() {
+            document.getElementById('gamut-section').style.display = 'block';
+
+            const phaseEl = document.getElementById('gamut-phase');
+            const instructionEl = document.getElementById('gamut-instruction');
+            const leftEl = document.getElementById('gamut-left');
+            const rightEl = document.getElementById('gamut-right');
+            const sameBtn = document.getElementById('gamut-same');
+            const resultsEl = document.getElementById('gamut-results');
+
+            const results = [];
+            let currentTest = null;
+            let responseHandler = null;
+            let testIndex = 0;
+
+            async function showPair(color, swapped = false) {
+                const leftWide = !swapped;
+                renderGamutPatch(leftEl, color, leftWide);
+                renderGamutPatch(rightEl, color, !leftWide);
+                return { color, leftWide };
+            }
+
+            function handleResponse(choice) {
+                if (!responseHandler || !currentTest) return;
+                const { color, leftWide } = currentTest;
+                let sawDifference = choice !== 'same';
+                if (sawDifference) {
+                    // Check if they picked the wide gamut one (correct)
+                    const pickedWide = (choice === 'left' && leftWide) || (choice === 'right' && !leftWide);
+                    sawDifference = pickedWide; // Only count as "saw difference" if they picked the right one
+                }
+                responseHandler(sawDifference);
+                responseHandler = null;
+                currentTest = null;
+            }
+
+            leftEl.onclick = () => { leftEl.style.opacity = '0.6'; setTimeout(() => leftEl.style.opacity = '1', 100); handleResponse('left'); };
+            rightEl.onclick = () => { rightEl.style.opacity = '0.6'; setTimeout(() => rightEl.style.opacity = '1', 100); handleResponse('right'); };
+            sameBtn.onclick = () => handleResponse('same');
+
+            // Test each color
+            for (let i = 0; i < gamutTestColors.length; i++) {
+                const color = gamutTestColors[i];
+                phaseEl.textContent = `Testing ${color.name} (${i + 1}/${gamutTestColors.length})`;
+
+                // Test twice with swapped positions
+                let sawCount = 0;
+                for (let j = 0; j < 2; j++) {
+                    currentTest = await showPair(color, j % 2 === 0);
+                    const sawDiff = await new Promise(r => { responseHandler = r; });
+                    if (sawDiff) sawCount++;
+                }
+
+                results.push({ color: color.name, space: color.space, sawDifference: sawCount > 0 });
+            }
+
+            showGamutResults();
+
+            function showGamutResults() {
+                sameBtn.style.display = 'none';
+                leftEl.innerHTML = rightEl.innerHTML = '';
+                leftEl.style.cursor = rightEl.style.cursor = 'default';
+                phaseEl.textContent = '';
+                instructionEl.textContent = 'Test complete!';
+                resultsEl.style.display = 'block';
+
+                const resultText = document.getElementById('gamut-result-text');
+                const resultSummary = document.getElementById('gamut-result-summary');
+
+                const p3Results = results.filter(r => r.space === 'p3');
+                const rec2020Results = results.filter(r => r.space === 'rec2020');
+                const p3Working = p3Results.filter(r => r.sawDifference).length;
+                const rec2020Working = rec2020Results.filter(r => r.sawDifference).length;
+
+                let text, color;
+                if (rec2020Working > 0) {
+                    text = `✅ Rec.2020 gamut detected (${rec2020Working}/${rec2020Results.length} colors)`;
+                    color = '#95d5b2';
+                } else if (p3Working > 0) {
+                    text = `✅ P3 gamut detected (${p3Working}/${p3Results.length} colors)`;
+                    color = '#95d5b2';
+                } else {
+                    text = '❌ Only sRGB detected';
+                    color = '#f5a5a5';
+                }
+                resultText.textContent = text;
+                resultText.style.color = color;
+
+                const lines = results.map(r =>
+                    `${r.color}: ${r.sawDifference ? '✓ visible' : '= same'}`
+                );
+                resultSummary.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
+
+                report.gamutTest = { results, p3Working, rec2020Working };
+                updateReport();
+            }
+        }
+
+        // ============ Report Generation ============
+        function updateReport() {
+            const lines = [
+                '=== Browser HDR & Wide Gamut Report ===',
+                `Generated: ${report.timestamp}`,
+                `User Agent: ${report.userAgent}`,
+                '',
+                '--- Display ---',
+                `HDR Display: ${report.display?.hdrDisplay ? 'Yes' : 'No'}`,
+                `P3 Gamut: ${report.display?.p3Gamut ? 'Yes' : 'No'}`,
+                `Rec.2020 Gamut: ${report.display?.rec2020Gamut ? 'Yes' : 'No'}`,
+                `CSS dynamic-range-limit: ${report.display?.dynamicRangeLimit ? 'Yes' : 'No'}`,
+                '',
+            ];
+
+            if (report.webgpu) {
+                lines.push('--- WebGPU ---');
+                lines.push(`Available: ${report.webgpu.available ? 'Yes' : 'No'}`);
+                lines.push(`HDR Canvas: ${report.webgpu.hdrCanvas ? 'Yes' : 'No'}`);
+                lines.push(`GPU: ${report.webgpu.gpu?.vendor || 'Unknown'}`);
+                lines.push('');
+            }
+
+            if (report.hdrTest) {
+                lines.push('--- HDR Headroom Test ---');
+                lines.push(`Detected Headroom: ${report.hdrTest.headroom}x`);
+                if (report.hdrTest.transitions) {
+                    for (const t of report.hdrTest.transitions) {
+                        lines.push(`  ${t.high}x ${t.result === 'higher' ? '>' : '='} ${t.low}x`);
+                    }
+                }
+                lines.push('');
+            }
+
+            if (report.gamutTest) {
+                lines.push('--- Color Gamut Test ---');
+                lines.push(`P3 colors visible: ${report.gamutTest.p3Working}`);
+                lines.push(`Rec.2020 colors visible: ${report.gamutTest.rec2020Working}`);
+                for (const r of report.gamutTest.results) {
+                    lines.push(`  ${r.color}: ${r.sawDifference ? 'visible' : 'same'}`);
+                }
+                lines.push('');
+            }
+
+            lines.push('=== End Report ===');
+            document.getElementById('report').value = lines.join('\n');
+        }
+
+        // ============ Tab Navigation ============
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.onclick = () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.tab).classList.add('active');
+            };
+        });
+
+        // ============ Copy Button ============
+        document.getElementById('copy-btn').onclick = () => {
+            const report = document.getElementById('report');
+            report.select();
+            navigator.clipboard.writeText(report.value).then(() => {
+                document.getElementById('copy-btn').textContent = 'Copied!';
+                setTimeout(() => document.getElementById('copy-btn').textContent = 'Copy', 2000);
+            });
+        };
+
+        // ============ Init ============
+        async function init() {
+            const caps = await detectCapabilities();
+            updateReport();
+
+            // Start HDR test if supported
+            if (caps.webgpuInfo?.hdrCanvasSupported) {
+                await runHdrTest(caps.webgpuInfo.device);
+            } else {
+                document.getElementById('hdr-unavailable').style.display = 'block';
+            }
+
+            // Gamut test always available (uses CSS)
+            await runGamutTest();
+        }
+
+        init().catch(e => console.error('Init error:', e));
+    </script>
+</body>
+</html>
