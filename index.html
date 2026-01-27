@@ -183,10 +183,10 @@
             <h3>Wide Gamut Test <span style="font-size: 12px; color: #888; font-weight: normal;">(P3 + Rec.2020)</span></h3>
             <div class="test-phase" id="gamut-phase"></div>
             <p class="test-instruction" id="gamut-instruction">Tap the more saturated color</p>
+            <div style="text-align: center; font-size: 12px; color: #888; margin-bottom: 4px;">Flicker test: flicker = gamut difference visible</div>
             <div id="gamut-flash-container" style="width: 100%; max-width: 500px; margin: 0 auto 12px; height: 60px; position: relative;">
                 <div id="gamut-flash-srgb" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;"></div>
                 <div id="gamut-flash-p3" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;"></div>
-                <div style="position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); font-size: 11px; color: rgba(255,255,255,0.7); text-shadow: 0 1px 2px rgba(0,0,0,0.8); pointer-events: none; z-index: 10;">flicker = different</div>
             </div>
             <div class="patch-container" id="gamut-patches">
                 <div class="patch" id="gamut-left"></div>
@@ -882,20 +882,30 @@
             rightEl.onclick = () => { rightEl.style.opacity = '0.6'; setTimeout(() => rightEl.style.opacity = '1', 100); handleResponse('right'); };
             sameBtn.onclick = () => handleResponse('same');
 
-            // Test each color
+            // Test each color with 4 trials, random left/right placement
+            const trialsPerColor = 4;
+            const requiredCorrect = 2; // Need 2+ correct to count as "saw difference"
+
             for (let i = 0; i < gamutTestColors.length; i++) {
                 const color = gamutTestColors[i];
-                phaseEl.textContent = `Testing ${color.name} (${i + 1}/${gamutTestColors.length})`;
+                let correctCount = 0;
 
-                // Test twice with swapped positions
-                let sawCount = 0;
-                for (let j = 0; j < 2; j++) {
-                    currentTest = await showPair(color, j % 2 === 0);
+                for (let trial = 0; trial < trialsPerColor; trial++) {
+                    phaseEl.textContent = `${color.name} (${i + 1}/${gamutTestColors.length}) - trial ${trial + 1}/${trialsPerColor}`;
+
+                    // Randomly place P3 on left or right
+                    const p3OnLeft = Math.random() < 0.5;
+                    currentTest = await showPair(color, !p3OnLeft);
                     const sawDiff = await new Promise(r => { responseHandler = r; });
-                    if (sawDiff) sawCount++;
+                    if (sawDiff) correctCount++;
                 }
 
-                results.push({ color: color.name, tier: color.tier, sawDifference: sawCount > 0 });
+                results.push({
+                    color: color.name,
+                    tier: color.tier,
+                    correctCount,
+                    sawDifference: correctCount >= requiredCorrect
+                });
             }
 
             showGamutResults();
@@ -909,6 +919,7 @@
                 instructionEl.textContent = 'Test complete!';
                 resultsEl.style.display = 'block';
                 document.getElementById('gamut-flash-container').style.display = 'none';
+                document.getElementById('gamut-flash-container').previousElementSibling.style.display = 'none';
 
                 const resultText = document.getElementById('gamut-result-text');
                 const resultSummary = document.getElementById('gamut-result-summary');
@@ -933,7 +944,7 @@
                 resultText.style.color = textColor;
 
                 const lines = results.map(r =>
-                    `${r.color}: ${r.sawDifference ? '✓ visible' : '= same'}`
+                    `${r.color}: ${r.sawDifference ? '✓' : '='} (${r.correctCount}/${trialsPerColor})`
                 );
                 resultSummary.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
 
