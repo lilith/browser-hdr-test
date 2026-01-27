@@ -324,6 +324,82 @@
 
                         addCap('HDR Canvas (rgba16float + extended)', hdrCanvasSupported ? 'Yes' : 'No');
 
+                        // Check what tone mapping modes are available
+                        let toneMappingModes = [];
+                        for (const mode of ['standard', 'extended']) {
+                            try {
+                                const testCanvas2 = document.createElement('canvas');
+                                const testCtx = testCanvas2.getContext('webgpu');
+                                testCtx.configure({
+                                    device,
+                                    format: 'rgba16float',
+                                    toneMapping: { mode }
+                                });
+                                toneMappingModes.push(mode);
+                            } catch (e) {}
+                        }
+                        addCap('Tone Mapping Modes', toneMappingModes.join(', ') || 'none');
+
+                        // Verify HDR values are actually rendered (GPU readback)
+                        try {
+                            const verifyCanvas = document.createElement('canvas');
+                            verifyCanvas.width = verifyCanvas.height = 4;
+                            const verifyCtx = verifyCanvas.getContext('webgpu');
+                            verifyCtx.configure({
+                                device,
+                                format: 'rgba16float',
+                                toneMapping: { mode: 'extended' }
+                            });
+
+                            // Render 2.0 brightness
+                            const module = device.createShaderModule({ code: `
+                                @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+                                    let x = f32(i & 1u) * 4.0 - 1.0;
+                                    let y = f32((i >> 1u) & 1u) * 4.0 - 1.0;
+                                    return vec4f(x, y, 0.0, 1.0);
+                                }
+                                @fragment fn fs() -> @location(0) vec4f {
+                                    return vec4f(2.0, 2.0, 2.0, 1.0);
+                                }
+                            `});
+                            const pipeline = device.createRenderPipeline({
+                                layout: 'auto',
+                                vertex: { module, entryPoint: 'vs' },
+                                fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba16float' }] },
+                                primitive: { topology: 'triangle-list' }
+                            });
+                            const encoder = device.createCommandEncoder();
+                            const pass = encoder.beginRenderPass({
+                                colorAttachments: [{
+                                    view: verifyCtx.getCurrentTexture().createView(),
+                                    clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                                    loadOp: 'clear', storeOp: 'store'
+                                }]
+                            });
+                            pass.setPipeline(pipeline);
+                            pass.draw(3);
+                            pass.end();
+
+                            // Read back pixel
+                            const readBuffer = device.createBuffer({
+                                size: 16, // 4 floats * 4 bytes
+                                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+                            });
+                            encoder.copyTextureToBuffer(
+                                { texture: verifyCtx.getCurrentTexture() },
+                                { buffer: readBuffer, bytesPerRow: 256 },
+                                { width: 1, height: 1 }
+                            );
+                            device.queue.submit([encoder.finish()]);
+                            await readBuffer.mapAsync(GPUMapMode.READ);
+                            const data = new Float32Array(readBuffer.getMappedRange().slice(0, 16));
+                            const renderedValue = data[0].toFixed(2);
+                            readBuffer.unmap();
+                            addCap('GPU Readback (rendered 2.0)', `${renderedValue} (expected 2.0)`);
+                        } catch (e) {
+                            addCap('GPU Readback', `Error: ${e.message}`);
+                        }
+
                         // Test P3 color space support
                         let p3CanvasSupported = false;
                         try {
@@ -430,11 +506,58 @@
             document.getElementById('hdr-section').style.display = 'block';
             document.getElementById('hdr-method').style.display = 'block';
 
+            // Step 0: HDR sanity check - show 1.0 vs 4.0 for quick visual verification
             const phaseEl = document.getElementById('hdr-phase');
             const instructionEl = document.getElementById('hdr-instruction');
             const leftEl = document.getElementById('hdr-left');
             const rightEl = document.getElementById('hdr-right');
             const sameBtn = document.getElementById('hdr-same');
+
+            phaseEl.textContent = 'Step 0: HDR Sanity Check';
+            instructionEl.innerHTML = 'Is the RIGHT patch brighter? <span style="font-size:14px;color:#888">(1.0x left, 4.0x right)</span>';
+
+            await Promise.all([
+                renderHdrPatch(leftEl, device, 1.0),
+                renderHdrPatch(rightEl, device, 4.0)
+            ]);
+
+            // Wait for user to see the sanity check
+            const sanityResult = await new Promise(resolve => {
+                const origLeftClick = leftEl.onclick;
+                const origRightClick = rightEl.onclick;
+                const origSameClick = sameBtn.onclick;
+
+                leftEl.onclick = () => resolve('left-brighter');
+                rightEl.onclick = () => resolve('right-brighter');
+                sameBtn.onclick = () => resolve('same');
+            });
+
+            report.hdrSanityCheck = sanityResult;
+            if (sanityResult === 'same') {
+                // HDR is not working at all
+                document.getElementById('hdr-results').style.display = 'block';
+                document.getElementById('hdr-result-text').textContent = '⚠️ HDR NOT WORKING - 4.0x looks same as 1.0x';
+                document.getElementById('hdr-result-text').style.color = '#f5a5a5';
+                document.getElementById('hdr-result-summary').innerHTML =
+                    '<div>Check: Windows HDR enabled? (Settings → Display → HDR)</div>' +
+                    '<div>Check: Browser HDR enabled? (chrome://flags → #enable-hdr)</div>' +
+                    '<div>Check: Monitor in HDR mode?</div>';
+                sameBtn.style.display = 'none';
+                updateReport();
+                return;
+            }
+            if (sanityResult === 'left-brighter') {
+                // Something weird - left (1.0) should never be brighter than right (4.0)
+                document.getElementById('hdr-results').style.display = 'block';
+                document.getElementById('hdr-result-text').textContent = '⚠️ Unexpected result - please retry';
+                document.getElementById('hdr-result-text').style.color = '#f5d5a5';
+                sameBtn.style.display = 'none';
+                updateReport();
+                return;
+            }
+
+            // Right was brighter, HDR is working. Continue with full test.
+            instructionEl.textContent = 'Tap the brighter patch';
             const resultsEl = document.getElementById('hdr-results');
 
             const results = {};
@@ -505,23 +628,39 @@
                 return;
             }
 
+            // Step 2: Coarse search - test adjacent integer levels
             phaseEl.textContent = 'Step 2: Finding range...';
             let lowerBound = 1.0, upperBound = null;
             for (const high of [2.0, 3.0, 4.0]) {
+                phaseEl.textContent = `Testing ${high}x vs ${high - 1.0}x...`;
                 result = await testPair(high - 1.0, high, 1);
-                if (result === 'same') { upperBound = high; break; }
-                else lowerBound = high;
+                if (result === 'same') {
+                    upperBound = high;
+                    break;
+                } else {
+                    lowerBound = high;
+                }
             }
 
             if (upperBound !== null) {
+                // Binary search between lowerBound and upperBound
+                // Compare adjacent values (mid-0.25 vs mid) to find where clamping starts
                 phaseEl.textContent = 'Step 3: Refining...';
                 let searchLow = lowerBound, searchHigh = upperBound;
+
                 while (searchHigh - searchLow > 0.25) {
                     const mid = Math.round((searchLow + searchHigh) * 2) / 4;
-                    phaseEl.textContent = `Refining: ${mid}x...`;
+                    phaseEl.textContent = `Testing ${mid}x vs ${(mid - 0.25).toFixed(2)}x...`;
+                    // Compare adjacent values - if they look different, ceiling >= mid
                     result = await testPair(mid - 0.25, mid, 1);
-                    if (result === 'higher') searchLow = mid; else searchHigh = mid;
+                    if (result === 'higher') {
+                        searchLow = mid;  // mid is distinguishable from mid-0.25, ceiling >= mid
+                    } else {
+                        searchHigh = mid; // mid looks same as mid-0.25, both clamped, ceiling < mid
+                    }
                 }
+
+                // Confirm the detected ceiling
                 phaseEl.textContent = `Confirming ${searchLow}x...`;
                 await testPair(searchLow, searchLow + 0.25, 2);
                 showHdrResults(searchLow);
