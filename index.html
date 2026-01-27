@@ -208,7 +208,7 @@
     <div class="details" style="margin-top: 24px;">
         <h3>Report
             <button id="copy-btn" style="margin-left: 10px; padding: 4px 12px; cursor: pointer;">Copy</button>
-            <button id="submit-btn" style="margin-left: 10px; padding: 4px 12px; cursor: pointer; background: #2a4a2a; border: 1px solid #4a8a4a; color: #95d5b2; display: none;">Submit Results</button>
+            <button id="submit-btn" style="margin-left: 10px; padding: 4px 12px; cursor: pointer; background: #2a4a2a; border: 1px solid #4a8a4a; color: #95d5b2;" disabled>Waiting for tests...</button>
             <span id="submit-status" style="margin-left: 10px; font-size: 13px;"></span>
         </h3>
         <p style="font-size: 12px; color: #888; margin: 4px 0 8px;">
@@ -232,10 +232,23 @@
         let resultsSubmitted = false;
 
         function checkShowSubmitButton() {
+            const btn = document.getElementById('submit-btn');
+            const hint = document.getElementById('submit-hint');
             console.log('checkShowSubmitButton:', { hdrTestComplete, gamutTestComplete, resultsSubmitted });
-            if (hdrTestComplete && gamutTestComplete && !resultsSubmitted) {
-                document.getElementById('submit-btn').style.display = 'inline-block';
-                document.getElementById('submit-hint').style.display = 'inline';
+
+            if (resultsSubmitted) {
+                btn.textContent = 'Submitted ✓';
+                btn.disabled = true;
+            } else if (hdrTestComplete && gamutTestComplete) {
+                btn.textContent = 'Submit Results';
+                btn.disabled = false;
+                hint.style.display = 'inline';
+            } else {
+                const waiting = [];
+                if (!hdrTestComplete) waiting.push('HDR');
+                if (!gamutTestComplete) waiting.push('Gamut');
+                btn.textContent = `Waiting for ${waiting.join(' & ')}...`;
+                btn.disabled = true;
             }
         }
 
@@ -1094,6 +1107,7 @@
 
         // ============ Init ============
         async function init() {
+            checkShowSubmitButton(); // Show initial state
             const caps = await detectCapabilities();
             updateReport();
 
