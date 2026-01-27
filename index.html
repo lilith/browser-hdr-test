@@ -124,28 +124,7 @@
             padding: 8px;
             resize: vertical;
         }
-        .tab-container {
-            display: flex;
-            gap: 4px;
-            margin-bottom: 16px;
-        }
-        .tab {
-            padding: 10px 20px;
-            background: #2a2a2a;
-            border: none;
-            border-radius: 8px 8px 0 0;
-            color: #888;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        .tab.active {
-            background: #252525;
-            color: #fff;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
+        .test-content {
             display: block;
         }
         a { color: #93c5fd; }
@@ -174,14 +153,8 @@
         <div id="cap-content"></div>
     </div>
 
-    <!-- Test Tabs -->
-    <div class="tab-container">
-        <button class="tab active" data-tab="hdr-test">HDR Headroom</button>
-        <button class="tab" data-tab="gamut-test">Color Gamut</button>
-    </div>
-
     <!-- HDR Headroom Test -->
-    <div id="hdr-test" class="tab-content active">
+    <div id="hdr-test" class="test-content">
         <div class="test-section" id="hdr-section" style="display: none;">
             <h3>HDR Headroom Test <span style="font-size: 12px; color: #888; font-weight: normal;">(WebGPU rgba16float + extended)</span></h3>
             <div class="test-phase" id="hdr-phase"></div>
@@ -205,7 +178,7 @@
     </div>
 
     <!-- Color Gamut Test -->
-    <div id="gamut-test" class="tab-content">
+    <div id="gamut-test" class="test-content">
         <div class="test-section" id="gamut-section" style="display: none;">
             <h3>Color Gamut Test</h3>
             <div class="test-phase" id="gamut-phase"></div>
@@ -458,6 +431,7 @@
                 ctx.configure({
                     device,
                     format: 'rgba16float',
+                    colorSpace: 'srgb',
                     toneMapping: { mode: 'extended' },
                     alphaMode: 'premultiplied',
                 });
@@ -707,16 +681,14 @@
         }
 
         // ============ Color Gamut Test ============
-        // Colors outside sRGB but within P3 or Rec.2020
+        // Colors outside sRGB but within P3
+        // Note: Rec.2020 cannot be reliably tested via CSS - color(rec2020 ...) has very limited support
         const gamutTestColors = [
-            // P3 colors (outside sRGB)
-            { name: 'P3 Red', p3: [1, 0.2, 0.2], srgb: [1, 0.35, 0.35], space: 'p3' },
-            { name: 'P3 Green', p3: [0.2, 1, 0.2], srgb: [0.35, 0.9, 0.35], space: 'p3' },
-            { name: 'P3 Cyan', p3: [0, 1, 1], srgb: [0.3, 0.95, 0.95], space: 'p3' },
-            { name: 'P3 Orange', p3: [1, 0.5, 0], srgb: [1, 0.55, 0.2], space: 'p3' },
-            // Rec.2020 colors (outside P3)
-            { name: 'Rec.2020 Green', p3: [0, 1, 0], srgb: [0.4, 0.85, 0.4], space: 'rec2020' },
-            { name: 'Rec.2020 Cyan', p3: [0, 1, 0.9], srgb: [0.35, 0.9, 0.85], space: 'rec2020' },
+            // P3 colors (outside sRGB) - these should look more saturated on P3 displays
+            { name: 'P3 Red', p3: [1, 0.1, 0.1], srgb: [1, 0.3, 0.3], space: 'p3' },
+            { name: 'P3 Green', p3: [0.1, 1, 0.1], srgb: [0.45, 0.88, 0.45], space: 'p3' },
+            { name: 'P3 Blue', p3: [0.1, 0.1, 1], srgb: [0.35, 0.35, 1], space: 'p3' },
+            { name: 'P3 Orange', p3: [1, 0.5, 0], srgb: [1, 0.55, 0.15], space: 'p3' },
         ];
 
         function renderGamutPatch(container, color, useWideGamut) {
@@ -804,20 +776,14 @@
                 const resultText = document.getElementById('gamut-result-text');
                 const resultSummary = document.getElementById('gamut-result-summary');
 
-                const p3Results = results.filter(r => r.space === 'p3');
-                const rec2020Results = results.filter(r => r.space === 'rec2020');
-                const p3Working = p3Results.filter(r => r.sawDifference).length;
-                const rec2020Working = rec2020Results.filter(r => r.sawDifference).length;
+                const p3Working = results.filter(r => r.sawDifference).length;
 
                 let text, color;
-                if (rec2020Working > 0) {
-                    text = `✅ Rec.2020 gamut detected (${rec2020Working}/${rec2020Results.length} colors)`;
-                    color = '#95d5b2';
-                } else if (p3Working > 0) {
-                    text = `✅ P3 gamut detected (${p3Working}/${p3Results.length} colors)`;
+                if (p3Working > 0) {
+                    text = `✅ P3 gamut working (${p3Working}/${results.length} colors visible)`;
                     color = '#95d5b2';
                 } else {
-                    text = '❌ Only sRGB detected';
+                    text = '❌ Only sRGB detected (or P3 colors not distinguishable)';
                     color = '#f5a5a5';
                 }
                 resultText.textContent = text;
@@ -828,7 +794,7 @@
                 );
                 resultSummary.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
 
-                report.gamutTest = { results, p3Working, rec2020Working };
+                report.gamutTest = { results, p3Working };
                 updateReport();
             }
         }
@@ -870,10 +836,9 @@
             }
 
             if (report.gamutTest) {
-                lines.push('--- Color Gamut Test ---');
-                lines.push(`P3 colors visible: ${report.gamutTest.p3Working}`);
-                lines.push(`Rec.2020 colors visible: ${report.gamutTest.rec2020Working}`);
-                for (const r of report.gamutTest.results) {
+                lines.push('--- P3 Gamut Test ---');
+                lines.push(`P3 colors visible: ${report.gamutTest.p3Working}/${report.gamutTest.results?.length || 0}`);
+                for (const r of report.gamutTest.results || []) {
                     lines.push(`  ${r.color}: ${r.sawDifference ? 'visible' : 'same'}`);
                 }
                 lines.push('');
@@ -882,32 +847,6 @@
             lines.push('=== End Report ===');
             document.getElementById('report').value = lines.join('\n');
         }
-
-        // ============ Tab Navigation ============
-        let hdrTestStarted = false;
-        let gamutTestStarted = false;
-        let cachedCaps = null;
-
-        function startTestForTab(tabId) {
-            if (tabId === 'hdr-test' && !hdrTestStarted && cachedCaps?.webgpuInfo?.hdrCanvasSupported) {
-                hdrTestStarted = true;
-                runHdrTest(cachedCaps.webgpuInfo.device).catch(e => console.error('HDR test error:', e));
-            } else if (tabId === 'gamut-test' && !gamutTestStarted) {
-                gamutTestStarted = true;
-                runGamutTest().catch(e => console.error('Gamut test error:', e));
-            }
-        }
-
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.onclick = () => {
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                tab.classList.add('active');
-                document.getElementById(tab.dataset.tab).classList.add('active');
-                // Start the test for this tab if not already started
-                startTestForTab(tab.dataset.tab);
-            };
-        });
 
         // ============ Copy Button ============
         document.getElementById('copy-btn').onclick = () => {
@@ -921,16 +860,18 @@
 
         // ============ Init ============
         async function init() {
-            cachedCaps = await detectCapabilities();
+            const caps = await detectCapabilities();
             updateReport();
 
-            // Show unavailable message if WebGPU HDR not supported
-            if (!cachedCaps.webgpuInfo?.hdrCanvasSupported) {
+            // Run HDR test if supported
+            if (caps.webgpuInfo?.hdrCanvasSupported) {
+                await runHdrTest(caps.webgpuInfo.device);
+            } else {
                 document.getElementById('hdr-unavailable').style.display = 'block';
             }
 
-            // Start the test for the initially active tab (HDR)
-            startTestForTab('hdr-test');
+            // Run gamut test (always available, uses CSS)
+            await runGamutTest();
         }
 
         init().catch(e => console.error('Init error:', e));
