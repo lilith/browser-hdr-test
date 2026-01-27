@@ -680,34 +680,93 @@
             }
         }
 
-        // ============ Color Gamut Test ============
-        // Colors outside sRGB but within P3
-        // Note: Rec.2020 cannot be reliably tested via CSS - color(rec2020 ...) has very limited support
+        // ============ Color Gamut Test (WebGPU) ============
+        // Test P3 gamut by rendering same color values with different colorSpace settings
+        // If P3 is working, the display-p3 canvas will show more saturated colors
         const gamutTestColors = [
-            // P3 colors (outside sRGB) - these should look more saturated on P3 displays
-            { name: 'P3 Red', p3: [1, 0.1, 0.1], srgb: [1, 0.3, 0.3], space: 'p3' },
-            { name: 'P3 Green', p3: [0.1, 1, 0.1], srgb: [0.45, 0.88, 0.45], space: 'p3' },
-            { name: 'P3 Blue', p3: [0.1, 0.1, 1], srgb: [0.35, 0.35, 1], space: 'p3' },
-            { name: 'P3 Orange', p3: [1, 0.5, 0], srgb: [1, 0.55, 0.15], space: 'p3' },
+            // Colors at the edge of P3 gamut (saturated primaries)
+            { name: 'P3 Red', rgb: [1.0, 0.0, 0.0] },
+            { name: 'P3 Green', rgb: [0.0, 1.0, 0.0] },
+            { name: 'P3 Cyan', rgb: [0.0, 1.0, 1.0] },
         ];
 
-        function renderGamutPatch(container, color, useWideGamut) {
-            container.innerHTML = '';
-            const div = document.createElement('div');
-            div.style.cssText = 'width: 100%; height: 100%;';
-
-            if (useWideGamut) {
-                // Use CSS color() function for P3
-                div.style.backgroundColor = `color(display-p3 ${color.p3.join(' ')})`;
-            } else {
-                // Clipped sRGB version
-                div.style.backgroundColor = `rgb(${color.srgb.map(c => Math.round(c * 255)).join(',')})`;
+        const gamutPatchShader = `
+            struct Params { r: f32, g: f32, b: f32, _pad: f32 }
+            @group(0) @binding(0) var<uniform> params: Params;
+            @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+                let x = f32(i & 1u) * 4.0 - 1.0;
+                let y = f32((i >> 1u) & 1u) * 4.0 - 1.0;
+                return vec4f(x, y, 0.0, 1.0);
             }
+            @fragment fn fs() -> @location(0) vec4f {
+                return vec4f(params.r, params.g, params.b, 1.0);
+            }
+        `;
 
-            container.appendChild(div);
+        async function renderGamutPatch(container, device, color, colorSpace) {
+            container.innerHTML = '';
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 256;
+            canvas.style.cssText = 'width: 100%; height: 100%; display: block;';
+
+            const ctx = canvas.getContext('webgpu');
+            if (!ctx) return null;
+
+            try {
+                ctx.configure({
+                    device,
+                    format: 'rgba8unorm',
+                    colorSpace: colorSpace, // 'srgb' or 'display-p3'
+                    alphaMode: 'premultiplied',
+                });
+            } catch (e) { return null; }
+
+            const module = device.createShaderModule({ code: gamutPatchShader });
+            const paramsBuffer = device.createBuffer({
+                size: 16,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
+            device.queue.writeBuffer(paramsBuffer, 0, new Float32Array([color.rgb[0], color.rgb[1], color.rgb[2], 0]));
+
+            const bindGroupLayout = device.createBindGroupLayout({
+                entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }]
+            });
+            const bindGroup = device.createBindGroup({
+                layout: bindGroupLayout,
+                entries: [{ binding: 0, resource: { buffer: paramsBuffer } }]
+            });
+            const pipeline = device.createRenderPipeline({
+                layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+                vertex: { module, entryPoint: 'vs' },
+                fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] },
+                primitive: { topology: 'triangle-list' }
+            });
+
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginRenderPass({
+                colorAttachments: [{
+                    view: ctx.getCurrentTexture().createView(),
+                    clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                    loadOp: 'clear', storeOp: 'store'
+                }]
+            });
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.draw(3);
+            pass.end();
+            device.queue.submit([encoder.finish()]);
+
+            container.appendChild(canvas);
+            return canvas;
         }
 
-        async function runGamutTest() {
+        async function runGamutTest(device) {
+            if (!device) {
+                document.getElementById('gamut-section').innerHTML =
+                    '<p class="status warning">Gamut test requires WebGPU</p>';
+                return;
+            }
+
             document.getElementById('gamut-section').style.display = 'block';
 
             const phaseEl = document.getElementById('gamut-phase');
@@ -717,26 +776,32 @@
             const sameBtn = document.getElementById('gamut-same');
             const resultsEl = document.getElementById('gamut-results');
 
+            instructionEl.innerHTML = 'Tap the <strong>more saturated/vivid</strong> color';
+
             const results = [];
             let currentTest = null;
             let responseHandler = null;
-            let testIndex = 0;
 
             async function showPair(color, swapped = false) {
-                const leftWide = !swapped;
-                renderGamutPatch(leftEl, color, leftWide);
-                renderGamutPatch(rightEl, color, !leftWide);
-                return { color, leftWide };
+                // One patch in P3, one in sRGB - same color values
+                // On P3 display: P3 patch will be more saturated
+                // On sRGB display: both will look the same (clipped)
+                const leftP3 = !swapped;
+                await Promise.all([
+                    renderGamutPatch(leftEl, device, color, leftP3 ? 'display-p3' : 'srgb'),
+                    renderGamutPatch(rightEl, device, color, leftP3 ? 'srgb' : 'display-p3')
+                ]);
+                return { color, leftP3 };
             }
 
             function handleResponse(choice) {
                 if (!responseHandler || !currentTest) return;
-                const { color, leftWide } = currentTest;
+                const { color, leftP3 } = currentTest;
                 let sawDifference = choice !== 'same';
                 if (sawDifference) {
-                    // Check if they picked the wide gamut one (correct)
-                    const pickedWide = (choice === 'left' && leftWide) || (choice === 'right' && !leftWide);
-                    sawDifference = pickedWide; // Only count as "saw difference" if they picked the right one
+                    // Check if they picked the P3 one (more saturated = correct)
+                    const pickedP3 = (choice === 'left' && leftP3) || (choice === 'right' && !leftP3);
+                    sawDifference = pickedP3;
                 }
                 responseHandler(sawDifference);
                 responseHandler = null;
@@ -760,7 +825,7 @@
                     if (sawDiff) sawCount++;
                 }
 
-                results.push({ color: color.name, space: color.space, sawDifference: sawCount > 0 });
+                results.push({ color: color.name, sawDifference: sawCount > 0 });
             }
 
             showGamutResults();
@@ -871,7 +936,7 @@
             }
 
             // Run gamut test immediately (don't wait for HDR test)
-            runGamutTest().catch(e => console.error('Gamut test error:', e));
+            runGamutTest(caps.webgpuInfo?.device).catch(e => console.error('Gamut test error:', e));
         }
 
         init().catch(e => console.error('Init error:', e));
