@@ -180,7 +180,7 @@
     <!-- Color Gamut Test -->
     <div id="gamut-test" class="test-content">
         <div class="test-section" id="gamut-section" style="display: none;">
-            <h3>Wide Gamut Test <span style="font-size: 12px; color: #888; font-weight: normal;">(P3 + Rec.2020)</span></h3>
+            <h3>Wide Gamut Test <span style="font-size: 12px; color: #888; font-weight: normal;">(P3)</span></h3>
             <div class="test-phase" id="gamut-phase"></div>
             <p class="test-instruction" id="gamut-instruction"></p>
             <div style="text-align: center; font-size: 12px; color: #888; margin-bottom: 4px;">Flicker test: flicker = gamut difference visible</div>
@@ -199,8 +199,8 @@
             </div>
         </div>
         <p style="font-size: 13px; color: #888; margin-top: 16px;">
-            Tests colors beyond sRGB (P3 tier) and beyond P3 (Rec.2020 tier).
-            Uses extended range values that get clipped on narrower gamut canvases.
+            Tests whether your display can show P3 colors more saturated than sRGB.
+            Same RGB values are rendered on P3 and sRGB canvases - if different, your display supports P3.
         </p>
     </div>
 
@@ -717,26 +717,27 @@
         }
 
         // ============ Color Gamut Test (WebGPU) ============
-        // Colors chosen so clipping is roughly perpendicular to luminance axis.
-        // Extend blue channel (weight 0.0722) more than green (0.7152) to minimize
-        // luminance shift when clipped. This way difference is primarily saturation.
+        // Use saturated colors at the EDGE of P3 gamut (values within 0-1).
+        // P3 and sRGB interpret the same RGB values differently because their
+        // primaries are in different positions. This gives equal brightness
+        // but different saturation without any clipping.
+        //
+        // Note: WebGPU canvas only supports sRGB and display-p3 colorSpaces,
+        // so we can't test Rec.2020 with this approach.
         const gamutTestColors = [
-            // Blue-heavy extensions (blue has low luma weight, so clipping = mostly saturation change)
-            { name: 'Vivid Blue', rgb: [0.2, 0.2, 1.25], tier: 'p3' },
-            { name: 'Electric Violet', rgb: [0.6, 0.1, 1.3], tier: 'p3' },
-            { name: 'Hot Magenta', rgb: [1.15, 0.1, 1.2], tier: 'p3' },
-            { name: 'Deep Cyan', rgb: [0.1, 0.85, 1.2], tier: 'p3' },
-
-            // Red extensions (medium luma weight)
-            { name: 'Vivid Red', rgb: [1.2, 0.15, 0.15], tier: 'p3' },
-            { name: 'Bright Orange', rgb: [1.2, 0.5, 0.1], tier: 'p3' },
-
-            // Green has highest luma weight - hardest to test without brightness shift
-            { name: 'Vivid Green', rgb: [0.2, 1.15, 0.2], tier: 'p3' },
-
-            // Beyond P3 - more extreme blue extensions (still low luma impact)
-            { name: 'Ultra Violet', rgb: [0.5, 0.0, 1.5], tier: 'rec2020' },
-            { name: 'Ultra Cyan', rgb: [0.0, 0.7, 1.5], tier: 'rec2020' },
+            // Primary colors - maximum difference at gamut boundaries
+            { name: 'Pure Red', rgb: [1, 0, 0], tier: 'p3' },
+            { name: 'Pure Green', rgb: [0, 1, 0], tier: 'p3' },
+            { name: 'Pure Blue', rgb: [0, 0, 1], tier: 'p3' },
+            // Secondary colors
+            { name: 'Cyan', rgb: [0, 1, 1], tier: 'p3' },
+            { name: 'Magenta', rgb: [1, 0, 1], tier: 'p3' },
+            { name: 'Yellow', rgb: [1, 1, 0], tier: 'p3' },
+            // Tertiary colors - often show more visible P3 difference
+            { name: 'Orange', rgb: [1, 0.5, 0], tier: 'p3' },
+            { name: 'Deep Pink', rgb: [1, 0.2, 0.6], tier: 'p3' },
+            { name: 'Lime', rgb: [0.5, 1, 0], tier: 'p3' },
+            { name: 'Teal', rgb: [0, 0.8, 0.7], tier: 'p3' },
         ];
 
         const gamutPatchShader = `
@@ -949,19 +950,14 @@
                 const resultSummary = document.getElementById('gamut-result-summary');
 
                 const p3Colors = results.filter(r => r.tier === 'p3');
-                const rec2020Colors = results.filter(r => r.tier === 'rec2020');
                 const p3Working = p3Colors.filter(r => r.sawDifference).length;
-                const rec2020Working = rec2020Colors.filter(r => r.sawDifference).length;
 
                 let text, textColor;
-                if (rec2020Working > 0) {
-                    text = `✅ Rec.2020 gamut! P3: ${p3Working}/${p3Colors.length}, Rec.2020: ${rec2020Working}/${rec2020Colors.length}`;
-                    textColor = '#95d5b2';
-                } else if (p3Working > 0) {
-                    text = `✅ P3 gamut (${p3Working}/${p3Colors.length} colors), no Rec.2020`;
+                if (p3Working > 0) {
+                    text = `✅ P3 gamut detected (${p3Working}/${p3Colors.length} colors)`;
                     textColor = '#95d5b2';
                 } else {
-                    text = '❌ Only sRGB detected';
+                    text = '❌ Only sRGB detected (or colors looked identical)';
                     textColor = '#f5a5a5';
                 }
                 resultText.textContent = text;
@@ -979,7 +975,7 @@
                 });
                 resultSummary.innerHTML = lines.map(l => `<div style="font-size:12px;">${l}</div>`).join('');
 
-                report.gamutTest = { results, p3Working, rec2020Working };
+                report.gamutTest = { results, p3Working };
                 updateReport();
                 gamutTestComplete = true;
                 checkShowSubmitButton();
@@ -1023,17 +1019,15 @@
             }
 
             if (report.gamutTest) {
-                lines.push('--- Wide Gamut Test ---');
+                lines.push('--- Wide Gamut Test (P3) ---');
                 const p3Count = report.gamutTest.results?.filter(r => r.tier === 'p3').length || 0;
-                const rec2020Count = report.gamutTest.results?.filter(r => r.tier === 'rec2020').length || 0;
                 lines.push(`P3 colors visible: ${report.gamutTest.p3Working}/${p3Count}`);
-                lines.push(`Rec.2020 colors visible: ${report.gamutTest.rec2020Working || 0}/${rec2020Count}`);
                 lines.push('');
                 lines.push('Per-color breakdown (brighter/richer responses):');
                 for (const r of report.gamutTest.results || []) {
                     const b = r.brighter || { p3: 0, srgb: 0, same: 0 };
                     const rich = r.richer || { p3: 0, srgb: 0, same: 0 };
-                    lines.push(`  ${r.color} [${r.tier}]: ${r.sawDifference ? 'VISIBLE' : 'same'}`);
+                    lines.push(`  ${r.color}: ${r.sawDifference ? 'VISIBLE' : 'same'}`);
                     lines.push(`    Brighter: P3=${b.p3} sRGB=${b.srgb} same=${b.same}`);
                     lines.push(`    Richer:   P3=${rich.p3} sRGB=${rich.srgb} same=${rich.same}`);
                 }
