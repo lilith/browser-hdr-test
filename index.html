@@ -863,15 +863,15 @@
             const caps = await detectCapabilities();
             updateReport();
 
-            // Run HDR test if supported
+            // Run HDR test if supported, otherwise show unavailable message
             if (caps.webgpuInfo?.hdrCanvasSupported) {
-                await runHdrTest(caps.webgpuInfo.device);
+                runHdrTest(caps.webgpuInfo.device).catch(e => console.error('HDR test error:', e));
             } else {
                 document.getElementById('hdr-unavailable').style.display = 'block';
             }
 
-            // Run gamut test (always available, uses CSS)
-            await runGamutTest();
+            // Run gamut test immediately (don't wait for HDR test)
+            runGamutTest().catch(e => console.error('Gamut test error:', e));
         }
 
         init().catch(e => console.error('Init error:', e));
