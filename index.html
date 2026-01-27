@@ -183,6 +183,10 @@
             <h3>Wide Gamut Test <span style="font-size: 12px; color: #888; font-weight: normal;">(P3 + Rec.2020)</span></h3>
             <div class="test-phase" id="gamut-phase"></div>
             <p class="test-instruction" id="gamut-instruction">Tap the more saturated color</p>
+            <div id="gamut-flash-container" style="width: 100%; max-width: 500px; margin: 0 auto 12px; height: 60px; position: relative;">
+                <div id="gamut-flash" style="width: 100%; height: 100%;"></div>
+                <div style="position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); font-size: 11px; color: rgba(255,255,255,0.7); text-shadow: 0 1px 2px rgba(0,0,0,0.5);">flicker = different</div>
+            </div>
             <div class="patch-container" id="gamut-patches">
                 <div class="patch" id="gamut-left"></div>
                 <div class="patch" id="gamut-right"></div>
@@ -796,6 +800,9 @@
             let currentTest = null;
             let responseHandler = null;
 
+            let flickerInterval = null;
+            const flashEl = document.getElementById('gamut-flash');
+
             async function showPair(color, swapped = false) {
                 // Same extended RGB values on both canvases, different colorSpace
                 // sRGB canvas clips values > 1.0, P3 canvas can show them
@@ -804,11 +811,32 @@
                     renderGamutPatch(leftEl, device, color.rgb, leftIsP3 ? 'display-p3' : 'srgb'),
                     renderGamutPatch(rightEl, device, color.rgb, leftIsP3 ? 'srgb' : 'display-p3')
                 ]);
+
+                // Start flicker test - alternate between sRGB and P3 in the flash bar
+                if (flickerInterval) clearInterval(flickerInterval);
+                let showP3 = true;
+
+                async function renderFlash() {
+                    await renderGamutPatch(flashEl, device, color.rgb, showP3 ? 'display-p3' : 'srgb');
+                    showP3 = !showP3;
+                }
+                await renderFlash();
+                flickerInterval = setInterval(renderFlash, 250); // 4Hz flicker
+
                 return { color, leftIsP3 };
+            }
+
+            function stopFlicker() {
+                if (flickerInterval) {
+                    clearInterval(flickerInterval);
+                    flickerInterval = null;
+                }
+                flashEl.innerHTML = '';
             }
 
             function handleResponse(choice) {
                 if (!responseHandler || !currentTest) return;
+                stopFlicker(); // Stop flicker when user responds
                 const { color, leftIsP3 } = currentTest;
                 let sawDifference = choice !== 'same';
                 if (sawDifference) {
@@ -844,12 +872,14 @@
             showGamutResults();
 
             function showGamutResults() {
+                stopFlicker();
                 sameBtn.style.display = 'none';
                 leftEl.innerHTML = rightEl.innerHTML = '';
                 leftEl.style.cursor = rightEl.style.cursor = 'default';
                 phaseEl.textContent = '';
                 instructionEl.textContent = 'Test complete!';
                 resultsEl.style.display = 'block';
+                document.getElementById('gamut-flash-container').style.display = 'none';
 
                 const resultText = document.getElementById('gamut-result-text');
                 const resultSummary = document.getElementById('gamut-result-summary');
