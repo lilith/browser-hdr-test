@@ -91,6 +91,7 @@ This detects headroom values: 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3
 - Extended range linear RGB (-0.5 to 7.5 typical)
 - Can represent HDR and wide gamut
 - Common on Windows for HDR compositing
+- Browser converts internal HDR to display's native format
 
 #### HDR10 (ST2084 + BT2020)
 - PQ transfer function (Perceptual Quantizer)
@@ -98,9 +99,37 @@ This detects headroom values: 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3
 - Up to 10,000 nits theoretical, ~1000 nits typical
 
 #### Current Limitations
-- No JavaScript API to detect active color profile
+- **No JavaScript API to detect active color profile**
 - `chrome://flags/#force-color-profile` doesn't expose selection to web content
+- WebGPU `colorSpace` option only accepts `'srgb'` or `'display-p3'`
 - Can only infer from behavior (gamut tests, headroom tests)
+
+#### What We CAN Detect
+```javascript
+// Display capability (not active profile)
+matchMedia('(color-gamut: p3)').matches
+matchMedia('(color-gamut: rec2020)').matches
+matchMedia('(dynamic-range: high)').matches
+
+// Canvas color space support
+canvas.getContext('2d', { colorSpace: 'display-p3' })
+gpuContext.configure({ colorSpace: 'display-p3' })
+
+// WebGL drawing buffer color space
+gl.drawingBufferColorSpace = 'display-p3'  // if supported
+```
+
+#### What We CANNOT Detect
+- Which `chrome://flags/#force-color-profile` is active
+- Whether display is using scRGB, HDR10, or Dolby Vision
+- Actual nits/headroom of display (only estimates)
+- Whether system-level color management is active
+
+#### Behavioral Tests (Indirect Detection)
+Our tests can infer display capabilities through user perception:
+1. **HDR Headroom Test** - measures actual brightness range the user can perceive
+2. **Gamut Test** - measures which P3/Rec.2020 colors the user can distinguish
+3. **These results may differ** from what media queries report (API vs reality)
 
 ## Test Features
 

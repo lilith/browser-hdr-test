@@ -263,7 +263,31 @@
             addCap('CSS dynamic-range-limit', dynamicRangeLimit ? 'Yes' : 'No');
             addCap('Screen', `${screen.width}x${screen.height} @ ${window.devicePixelRatio}x, ${screen.colorDepth}-bit`);
 
-            report.display = { hdrDisplay, p3Gamut, rec2020Gamut, dynamicRangeLimit };
+            // Test 2D canvas P3 support
+            let canvas2dP3 = false;
+            try {
+                const testCanvas = document.createElement('canvas');
+                const ctx = testCanvas.getContext('2d', { colorSpace: 'display-p3' });
+                if (ctx) {
+                    const imgData = ctx.getImageData(0, 0, 1, 1);
+                    canvas2dP3 = imgData.colorSpace === 'display-p3';
+                }
+            } catch (e) {}
+            addCap('2D Canvas P3', canvas2dP3 ? 'Yes' : 'No');
+
+            // Test WebGL color space support
+            let webglP3 = false;
+            try {
+                const testCanvas = document.createElement('canvas');
+                const gl = testCanvas.getContext('webgl2');
+                if (gl && 'drawingBufferColorSpace' in gl) {
+                    gl.drawingBufferColorSpace = 'display-p3';
+                    webglP3 = gl.drawingBufferColorSpace === 'display-p3';
+                }
+            } catch (e) {}
+            addCap('WebGL P3', webglP3 ? 'Yes' : 'No');
+
+            report.display = { hdrDisplay, p3Gamut, rec2020Gamut, dynamicRangeLimit, canvas2dP3, webglP3 };
 
             // WebGPU detection
             let webgpuInfo = null;
@@ -297,8 +321,25 @@
 
                         addCap('HDR Canvas (rgba16float + extended)', hdrCanvasSupported ? 'Yes' : 'No');
 
-                        webgpuInfo = { adapter, device, hdrCanvasSupported, features };
-                        report.webgpu = { available: true, hdrCanvas: hdrCanvasSupported, gpu: info };
+                        // Test P3 color space support
+                        let p3CanvasSupported = false;
+                        try {
+                            const p3Canvas = document.createElement('canvas');
+                            const p3Ctx = p3Canvas.getContext('webgpu');
+                            if (p3Ctx) {
+                                p3Ctx.configure({
+                                    device,
+                                    format: 'rgba16float',
+                                    colorSpace: 'display-p3',
+                                    toneMapping: { mode: 'extended' }
+                                });
+                                p3CanvasSupported = true;
+                            }
+                        } catch (e) {}
+                        addCap('P3 Canvas (colorSpace: display-p3)', p3CanvasSupported ? 'Yes' : 'No');
+
+                        webgpuInfo = { adapter, device, hdrCanvasSupported, p3CanvasSupported, features };
+                        report.webgpu = { available: true, hdrCanvas: hdrCanvasSupported, p3Canvas: p3CanvasSupported, gpu: info };
                     }
                 } catch (e) {
                     addCap('WebGPU', `Error: ${e.message}`);
@@ -658,9 +699,11 @@
                 '',
                 '--- Display ---',
                 `HDR Display: ${report.display?.hdrDisplay ? 'Yes' : 'No'}`,
-                `P3 Gamut: ${report.display?.p3Gamut ? 'Yes' : 'No'}`,
+                `P3 Gamut (media query): ${report.display?.p3Gamut ? 'Yes' : 'No'}`,
                 `Rec.2020 Gamut: ${report.display?.rec2020Gamut ? 'Yes' : 'No'}`,
                 `CSS dynamic-range-limit: ${report.display?.dynamicRangeLimit ? 'Yes' : 'No'}`,
+                `2D Canvas P3: ${report.display?.canvas2dP3 ? 'Yes' : 'No'}`,
+                `WebGL P3: ${report.display?.webglP3 ? 'Yes' : 'No'}`,
                 '',
             ];
 
