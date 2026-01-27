@@ -180,7 +180,7 @@
     <!-- Color Gamut Test -->
     <div id="gamut-test" class="test-content">
         <div class="test-section" id="gamut-section" style="display: none;">
-            <h3>P3 Gamut Test <span style="font-size: 12px; color: #888; font-weight: normal;">(WebGPU display-p3)</span></h3>
+            <h3>Wide Gamut Test <span style="font-size: 12px; color: #888; font-weight: normal;">(P3 + Rec.2020)</span></h3>
             <div class="test-phase" id="gamut-phase"></div>
             <p class="test-instruction" id="gamut-instruction">Tap the more saturated color</p>
             <div class="patch-container" id="gamut-patches">
@@ -194,8 +194,8 @@
             </div>
         </div>
         <p style="font-size: 13px; color: #888; margin-top: 16px;">
-            Outputs extended range values (>1.0) that exceed sRGB gamut.
-            sRGB canvas clips to 1.0, P3 canvas can display the extra saturation.
+            Tests colors beyond sRGB (P3 tier) and beyond P3 (Rec.2020 tier).
+            Uses extended range values that get clipped on narrower gamut canvases.
         </p>
     </div>
 
@@ -681,13 +681,27 @@
         }
 
         // ============ Color Gamut Test (WebGPU) ============
-        // Output values > 1.0 which are out-of-gamut for sRGB
-        // sRGB canvas clips to 1.0, P3 canvas can show the extra saturation
+        // Output values > 1.0 which are out-of-gamut for sRGB (and some beyond P3)
+        // sRGB canvas clips, P3 canvas shows more, Rec.2020 would show even more
         // Both use rgba16float to allow extended range values
         const gamutTestColors = [
-            { name: 'Extended Red', rgb: [1.22, 0.0, 0.0] },   // P3 red is ~1.22x sRGB red
-            { name: 'Extended Green', rgb: [0.0, 1.16, 0.0] }, // P3 green is ~1.16x sRGB green
-            { name: 'Extended Blue', rgb: [0.0, 0.0, 1.05] },  // P3 blue is ~1.05x sRGB blue
+            // Primary colors - outside sRGB, within P3
+            { name: 'P3 Red', rgb: [1.22, 0.0, 0.0], tier: 'p3' },
+            { name: 'P3 Green', rgb: [0.0, 1.16, 0.0], tier: 'p3' },
+
+            // Secondary colors - different clipping behavior
+            { name: 'P3 Cyan', rgb: [0.0, 1.10, 1.10], tier: 'p3' },
+            { name: 'P3 Yellow', rgb: [1.08, 1.08, 0.0], tier: 'p3' },
+            { name: 'P3 Magenta', rgb: [1.15, 0.0, 1.08], tier: 'p3' },
+
+            // Saturated oranges/teals - often show biggest P3 advantage
+            { name: 'P3 Orange', rgb: [1.20, 0.55, 0.0], tier: 'p3' },
+            { name: 'P3 Teal', rgb: [0.0, 1.12, 0.75], tier: 'p3' },
+
+            // Beyond P3 - into Rec.2020 territory
+            { name: 'Rec.2020 Red', rgb: [1.45, -0.05, -0.05], tier: 'rec2020' },
+            { name: 'Rec.2020 Green', rgb: [-0.10, 1.35, -0.05], tier: 'rec2020' },
+            { name: 'Rec.2020 Cyan', rgb: [-0.08, 1.25, 1.25], tier: 'rec2020' },
         ];
 
         const gamutPatchShader = `
@@ -824,7 +838,7 @@
                     if (sawDiff) sawCount++;
                 }
 
-                results.push({ color: color.name, sawDifference: sawCount > 0 });
+                results.push({ color: color.name, tier: color.tier, sawDifference: sawCount > 0 });
             }
 
             showGamutResults();
@@ -840,25 +854,31 @@
                 const resultText = document.getElementById('gamut-result-text');
                 const resultSummary = document.getElementById('gamut-result-summary');
 
-                const p3Working = results.filter(r => r.sawDifference).length;
+                const p3Colors = results.filter(r => r.tier === 'p3');
+                const rec2020Colors = results.filter(r => r.tier === 'rec2020');
+                const p3Working = p3Colors.filter(r => r.sawDifference).length;
+                const rec2020Working = rec2020Colors.filter(r => r.sawDifference).length;
 
-                let text, color;
-                if (p3Working > 0) {
-                    text = `✅ P3 gamut working (${p3Working}/${results.length} colors visible)`;
-                    color = '#95d5b2';
+                let text, textColor;
+                if (rec2020Working > 0) {
+                    text = `✅ Rec.2020 gamut! P3: ${p3Working}/${p3Colors.length}, Rec.2020: ${rec2020Working}/${rec2020Colors.length}`;
+                    textColor = '#95d5b2';
+                } else if (p3Working > 0) {
+                    text = `✅ P3 gamut (${p3Working}/${p3Colors.length} colors), no Rec.2020`;
+                    textColor = '#95d5b2';
                 } else {
-                    text = '❌ Only sRGB detected (or P3 colors not distinguishable)';
-                    color = '#f5a5a5';
+                    text = '❌ Only sRGB detected';
+                    textColor = '#f5a5a5';
                 }
                 resultText.textContent = text;
-                resultText.style.color = color;
+                resultText.style.color = textColor;
 
                 const lines = results.map(r =>
                     `${r.color}: ${r.sawDifference ? '✓ visible' : '= same'}`
                 );
                 resultSummary.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
 
-                report.gamutTest = { results, p3Working };
+                report.gamutTest = { results, p3Working, rec2020Working };
                 updateReport();
             }
         }
@@ -900,8 +920,11 @@
             }
 
             if (report.gamutTest) {
-                lines.push('--- P3 Gamut Test ---');
-                lines.push(`P3 colors visible: ${report.gamutTest.p3Working}/${report.gamutTest.results?.length || 0}`);
+                lines.push('--- Wide Gamut Test ---');
+                const p3Count = report.gamutTest.results?.filter(r => r.tier === 'p3').length || 0;
+                const rec2020Count = report.gamutTest.results?.filter(r => r.tier === 'rec2020').length || 0;
+                lines.push(`P3 colors visible: ${report.gamutTest.p3Working}/${p3Count}`);
+                lines.push(`Rec.2020 colors visible: ${report.gamutTest.rec2020Working || 0}/${rec2020Count}`);
                 for (const r of report.gamutTest.results || []) {
                     lines.push(`  ${r.color}: ${r.sawDifference ? 'visible' : 'same'}`);
                 }
