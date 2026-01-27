@@ -254,6 +254,44 @@
             }
         }
 
+        // ============ Image Codec Detection ============
+        async function detectImageCodecs() {
+            const codecs = {};
+
+            // Test images - minimal valid files for each format
+            const tests = {
+                webp: 'data:image/webp;base64,UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA=',
+                avif: 'data:image/avif;base64,AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADybWV0YQAAAAAAAAAoaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAGxpYmF2aWYAAAAADnBpdG0AAAAAAAEAAAAeaWxvYwAAAABEAAABAAEAAAABAAABGgAAAB0AAAAoaWluZgAAAAAAAQAAABppbmZlAgAAAAABAABhdjAxQ29sb3IAAAAAamlwcnAAAABLaXBjbwAAABRpc3BlAAAAAAAAAAIAAAACAAAAEHBpeGkAAAAAAwgICAAAAAxhdjFDgQ0MAAAAABNjb2xybmNseAACAAIAAYAAAAAXaXBtYQAAAAAAAAABAAEEAQKDBAAAACVtZGF0EgAKBzgARtCCAIMACwwQEEAQAA==',
+                jpegxl: 'data:image/jxl;base64,/woAEBAJAwAxhAA=',
+                heic: 'data:image/heic;base64,AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWljAAAA',
+            };
+
+            for (const [name, dataUrl] of Object.entries(tests)) {
+                try {
+                    const img = new Image();
+                    const loaded = await new Promise((resolve) => {
+                        img.onload = () => resolve(true);
+                        img.onerror = () => resolve(false);
+                        img.src = dataUrl;
+                    });
+                    codecs[name] = loaded;
+                } catch {
+                    codecs[name] = false;
+                }
+            }
+
+            // Also check canvas encode support
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 1;
+                codecs.webpEncode = canvas.toDataURL('image/webp').startsWith('data:image/webp');
+            } catch {
+                codecs.webpEncode = false;
+            }
+
+            return codecs;
+        }
+
         // ============ Capability Detection ============
         function addCap(label, value) {
             const row = document.createElement('div');
@@ -442,7 +480,27 @@
                 addCap('WebGPU', 'Not available');
             }
 
-            return { hdrDisplay, p3Gamut, rec2020Gamut, webgpuInfo };
+            // Detect image codecs
+            const imageCodecs = await detectImageCodecs();
+            report.imageCodecs = imageCodecs;
+            const codecList = Object.entries(imageCodecs).filter(([,v]) => v).map(([k]) => k).join(', ') || 'none';
+            addCap('Image Codecs', codecList);
+
+            // Screen info
+            const dpr = window.devicePixelRatio || 1;
+            const screenCss = { width: screen.width, height: screen.height };
+            const screenNative = { width: Math.round(screen.width * dpr), height: Math.round(screen.height * dpr) };
+            report.screen = {
+                dppx: dpr,
+                cssPixels: screenCss,
+                nativePixels: screenNative,
+                colorDepth: screen.colorDepth
+            };
+            addCap('Screen (CSS)', `${screenCss.width}x${screenCss.height}`);
+            addCap('Screen (Native)', `${screenNative.width}x${screenNative.height}`);
+            addCap('DPPX', dpr.toFixed(2));
+
+            return { hdrDisplay, p3Gamut, rec2020Gamut, webgpuInfo, imageCodecs };
         }
 
         // ============ HDR Headroom Test ============
@@ -1000,6 +1058,25 @@
                 '',
             ];
 
+            if (report.screen) {
+                lines.push('--- Screen ---');
+                lines.push(`DPPX: ${report.screen.dppx}`);
+                lines.push(`CSS Pixels: ${report.screen.cssPixels?.width}x${report.screen.cssPixels?.height}`);
+                lines.push(`Native Pixels: ${report.screen.nativePixels?.width}x${report.screen.nativePixels?.height}`);
+                lines.push(`Color Depth: ${report.screen.colorDepth}bit`);
+                lines.push('');
+            }
+
+            if (report.imageCodecs) {
+                lines.push('--- Image Codecs ---');
+                const codecs = report.imageCodecs;
+                lines.push(`WebP: ${codecs.webp ? 'Yes' : 'No'} (encode: ${codecs.webpEncode ? 'Yes' : 'No'})`);
+                lines.push(`AVIF: ${codecs.avif ? 'Yes' : 'No'}`);
+                lines.push(`JPEG XL: ${codecs.jpegxl ? 'Yes' : 'No'}`);
+                lines.push(`HEIC: ${codecs.heic ? 'Yes' : 'No'}`);
+                lines.push('');
+            }
+
             if (report.webgpu) {
                 lines.push('--- WebGPU ---');
                 lines.push(`Available: ${report.webgpu.available ? 'Yes' : 'No'}`);
@@ -1056,8 +1133,9 @@
             status.textContent = '';
 
             try {
+                const dpr = window.devicePixelRatio || 1;
                 const payload = {
-                    schemaVersion: 2,
+                    schemaVersion: 3,
                     timestamp: report.timestamp,
                     userAgent: report.userAgent,
                     platform: report.platform,
@@ -1066,7 +1144,10 @@
                     hdrSanityCheck: report.hdrSanityCheck,
                     hdrTest: report.hdrTest,
                     gamutTest: report.gamutTest,
-                    screenInfo: `${screen.width}x${screen.height}@${window.devicePixelRatio}x,${screen.colorDepth}bit`
+                    screen: report.screen,
+                    imageCodecs: report.imageCodecs,
+                    // Legacy field for backwards compat
+                    screenInfo: `${screen.width}x${screen.height}@${dpr}x,${screen.colorDepth}bit`
                 };
 
                 const response = await fetch(SUBMIT_URL, {
