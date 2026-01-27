@@ -135,7 +135,8 @@
     <p style="color: #888; margin-bottom: 20px;">
         Test your browser's actual HDR brightness headroom and wide color gamut support.
         <a href="https://github.com/lilith/browser-hdr-test">GitHub</a> |
-        <a href="https://github.com/lilith/browser-hdr-test/blob/main/BROWSER_HDR_TEST.md">Documentation</a>
+        <a href="https://github.com/lilith/browser-hdr-test/blob/main/BROWSER_HDR_TEST.md">Docs</a> |
+        <a href="PRIVACY.md">Privacy</a>
     </p>
 
     <!-- Android hint -->
@@ -486,18 +487,53 @@
             const codecList = Object.entries(imageCodecs).filter(([,v]) => v).map(([k]) => k).join(', ') || 'none';
             addCap('Image Codecs', codecList);
 
-            // Screen info
+            // Screen and viewport info
             const dpr = window.devicePixelRatio || 1;
             const screenCss = { width: screen.width, height: screen.height };
             const screenNative = { width: Math.round(screen.width * dpr), height: Math.round(screen.height * dpr) };
+            const viewportCss = { width: window.innerWidth, height: window.innerHeight };
+            const viewportNative = { width: Math.round(window.innerWidth * dpr), height: Math.round(window.innerHeight * dpr) };
+
+            // Network info (often restricted/spoofed for privacy)
+            const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection || {};
+            const network = {
+                effectiveType: conn.effectiveType || null,
+                downlink: conn.downlink || null,
+                saveData: conn.saveData || false,
+                rtt: conn.rtt || null
+            };
+
+            // Device hints (may be restricted)
+            const device = {
+                memory: navigator.deviceMemory || null,
+                cores: navigator.hardwareConcurrency || null,
+                maxTouchPoints: navigator.maxTouchPoints || 0
+            };
+
+            // Media query preferences
+            const prefs = {
+                colorScheme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+                reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+                contrast: matchMedia('(prefers-contrast: more)').matches ? 'more' : 'normal',
+                pointer: matchMedia('(pointer: coarse)').matches ? 'coarse' : 'fine',
+                hover: matchMedia('(hover: hover)').matches,
+                orientation: matchMedia('(orientation: portrait)').matches ? 'portrait' : 'landscape'
+            };
+
             report.screen = {
                 dppx: dpr,
                 cssPixels: screenCss,
                 nativePixels: screenNative,
                 colorDepth: screen.colorDepth
             };
+            report.viewport = { cssPixels: viewportCss, nativePixels: viewportNative };
+            report.network = network;
+            report.device = device;
+            report.prefs = prefs;
+
             addCap('Screen (CSS)', `${screenCss.width}x${screenCss.height}`);
             addCap('Screen (Native)', `${screenNative.width}x${screenNative.height}`);
+            addCap('Viewport (CSS)', `${viewportCss.width}x${viewportCss.height}`);
             addCap('DPPX', dpr.toFixed(2));
 
             return { hdrDisplay, p3Gamut, rec2020Gamut, webgpuInfo, imageCodecs };
@@ -1133,9 +1169,8 @@
             status.textContent = '';
 
             try {
-                const dpr = window.devicePixelRatio || 1;
                 const payload = {
-                    schemaVersion: 3,
+                    schemaVersion: 4,
                     timestamp: report.timestamp,
                     userAgent: report.userAgent,
                     platform: report.platform,
@@ -1145,9 +1180,11 @@
                     hdrTest: report.hdrTest,
                     gamutTest: report.gamutTest,
                     screen: report.screen,
-                    imageCodecs: report.imageCodecs,
-                    // Legacy field for backwards compat
-                    screenInfo: `${screen.width}x${screen.height}@${dpr}x,${screen.colorDepth}bit`
+                    viewport: report.viewport,
+                    network: report.network,
+                    device: report.device,
+                    prefs: report.prefs,
+                    imageCodecs: report.imageCodecs
                 };
 
                 const response = await fetch(SUBMIT_URL, {
