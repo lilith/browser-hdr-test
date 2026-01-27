@@ -206,7 +206,14 @@
 
     <!-- Report Section -->
     <div class="details" style="margin-top: 24px;">
-        <h3>Report <button id="copy-btn" style="margin-left: 10px; padding: 4px 12px; cursor: pointer;">Copy</button></h3>
+        <h3>Report
+            <button id="copy-btn" style="margin-left: 10px; padding: 4px 12px; cursor: pointer;">Copy</button>
+            <button id="submit-btn" style="margin-left: 10px; padding: 4px 12px; cursor: pointer; background: #2a4a2a; border: 1px solid #4a8a4a; color: #95d5b2; display: none;">Submit Results</button>
+            <span id="submit-status" style="margin-left: 10px; font-size: 13px;"></span>
+        </h3>
+        <p style="font-size: 12px; color: #888; margin: 4px 0 8px;">
+            <span id="submit-hint" style="display: none;">Help improve this tool by submitting your anonymous results.</span>
+        </p>
         <textarea id="report" readonly></textarea>
     </div>
 
@@ -522,7 +529,10 @@
                     '<div>Check: Browser HDR enabled? (chrome://flags → #enable-hdr)</div>' +
                     '<div>Check: Monitor in HDR mode?</div>';
                 sameBtn.style.display = 'none';
+                report.hdrTest = { headroom: 1.0, sanityFailed: true };
                 updateReport();
+                hdrTestComplete = true;
+                checkShowSubmitButton();
                 return;
             }
             if (sanityResult === 'left-brighter') {
@@ -531,7 +541,10 @@
                 document.getElementById('hdr-result-text').textContent = '⚠️ Unexpected result - please retry';
                 document.getElementById('hdr-result-text').style.color = '#f5d5a5';
                 sameBtn.style.display = 'none';
+                report.hdrTest = { headroom: null, sanityFailed: 'inverted' };
                 updateReport();
+                hdrTestComplete = true;
+                checkShowSubmitButton();
                 return;
             }
 
@@ -603,6 +616,7 @@
             let result = await testPair(0.5, 1.0, 1);
             if (result !== 'higher') result = await testPair(0.5, 1.0, 1);
             if (getResult(0.5, 1.0) !== 'higher') {
+                report.hdrTest = { headroom: null, baselineFailed: true };
                 showHdrResults('invalid');
                 return;
             }
@@ -682,6 +696,8 @@
 
                 report.hdrTest = { headroom, transitions: testedPairs.map(p => ({ ...p, result: getResult(p.low, p.high) })) };
                 updateReport();
+                hdrTestComplete = true;
+                checkShowSubmitButton();
             }
         }
 
@@ -782,6 +798,9 @@
             if (!device) {
                 document.getElementById('gamut-section').innerHTML =
                     '<p class="status warning">Gamut test requires WebGPU</p>';
+                report.gamutTest = { unavailable: true };
+                gamutTestComplete = true;
+                checkShowSubmitButton();
                 return;
             }
 
@@ -947,6 +966,8 @@
 
                 report.gamutTest = { results, p3Working, rec2020Working };
                 updateReport();
+                gamutTestComplete = true;
+                checkShowSubmitButton();
             }
         }
 
@@ -1010,12 +1031,68 @@
 
         // ============ Copy Button ============
         document.getElementById('copy-btn').onclick = () => {
-            const report = document.getElementById('report');
-            report.select();
-            navigator.clipboard.writeText(report.value).then(() => {
+            const reportEl = document.getElementById('report');
+            reportEl.select();
+            navigator.clipboard.writeText(reportEl.value).then(() => {
                 document.getElementById('copy-btn').textContent = 'Copied!';
                 setTimeout(() => document.getElementById('copy-btn').textContent = 'Copy', 2000);
             });
+        };
+
+        // ============ Submit Results ============
+        const SUBMIT_URL = 'https://script.google.com/a/macros/imazen.io/s/AKfycbzFAAhSM1krTOcifIIaUaXocROSjhzb2JTwLZvEClzU2UKPn4CgLlV61SgPJZsp0fqR/exec';
+        let hdrTestComplete = false;
+        let gamutTestComplete = false;
+        let resultsSubmitted = false;
+
+        function checkShowSubmitButton() {
+            if (hdrTestComplete && gamutTestComplete && !resultsSubmitted) {
+                document.getElementById('submit-btn').style.display = 'inline-block';
+                document.getElementById('submit-hint').style.display = 'inline';
+            }
+        }
+
+        document.getElementById('submit-btn').onclick = async () => {
+            const btn = document.getElementById('submit-btn');
+            const status = document.getElementById('submit-status');
+
+            btn.disabled = true;
+            btn.textContent = 'Submitting...';
+            status.textContent = '';
+
+            try {
+                const payload = {
+                    schemaVersion: 2,
+                    timestamp: report.timestamp,
+                    userAgent: report.userAgent,
+                    platform: report.platform,
+                    display: report.display,
+                    webgpu: report.webgpu,
+                    hdrSanityCheck: report.hdrSanityCheck,
+                    hdrTest: report.hdrTest,
+                    gamutTest: report.gamutTest,
+                    screenInfo: `${screen.width}x${screen.height}@${window.devicePixelRatio}x,${screen.colorDepth}bit`
+                };
+
+                const response = await fetch(SUBMIT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Apps Script doesn't support CORS preflight
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                // no-cors means we can't read the response, but if it didn't throw, it probably worked
+                resultsSubmitted = true;
+                btn.textContent = 'Submitted ✓';
+                btn.style.background = '#1b4332';
+                status.textContent = 'Thank you!';
+                status.style.color = '#95d5b2';
+            } catch (err) {
+                btn.disabled = false;
+                btn.textContent = 'Submit Results';
+                status.textContent = 'Error: ' + err.message;
+                status.style.color = '#f5a5a5';
+            }
         };
 
         // ============ Init ============
@@ -1028,6 +1105,9 @@
                 runHdrTest(caps.webgpuInfo.device).catch(e => console.error('HDR test error:', e));
             } else {
                 document.getElementById('hdr-unavailable').style.display = 'block';
+                report.hdrTest = { headroom: null, unavailable: true };
+                hdrTestComplete = true;
+                checkShowSubmitButton();
             }
 
             // Run gamut test immediately (don't wait for HDR test)
