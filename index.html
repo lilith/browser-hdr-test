@@ -227,27 +227,29 @@
 
         // Submit tracking - must be declared before functions that use them
         const SUBMIT_URL = 'https://script.google.com/a/macros/imazen.io/s/AKfycbzFAAhSM1krTOcifIIaUaXocROSjhzb2JTwLZvEClzU2UKPn4CgLlV61SgPJZsp0fqR/exec';
+        let capabilitiesDetected = false;
         let hdrTestComplete = false;
         let gamutTestComplete = false;
         let resultsSubmitted = false;
 
-        function checkShowSubmitButton() {
+        function updateSubmitButton() {
             const btn = document.getElementById('submit-btn');
             const hint = document.getElementById('submit-hint');
-            console.log('checkShowSubmitButton:', { hdrTestComplete, gamutTestComplete, resultsSubmitted });
 
             if (resultsSubmitted) {
                 btn.textContent = 'Submitted ✓';
                 btn.disabled = true;
-            } else if (hdrTestComplete && gamutTestComplete) {
-                btn.textContent = 'Submit Results';
+            } else if (capabilitiesDetected) {
+                // Allow submission once we have capability info, even if tests aren't done
+                if (hdrTestComplete && gamutTestComplete) {
+                    btn.textContent = 'Submit Results';
+                } else {
+                    btn.textContent = 'Submit Partial Results';
+                }
                 btn.disabled = false;
                 hint.style.display = 'inline';
             } else {
-                const waiting = [];
-                if (!hdrTestComplete) waiting.push('HDR');
-                if (!gamutTestComplete) waiting.push('Gamut');
-                btn.textContent = `Waiting for ${waiting.join(' & ')}...`;
+                btn.textContent = 'Detecting capabilities...';
                 btn.disabled = true;
             }
         }
@@ -560,7 +562,7 @@
                 report.hdrTest = { headroom: 1.0, sanityFailed: true };
                 updateReport();
                 hdrTestComplete = true;
-                checkShowSubmitButton();
+                updateSubmitButton();
                 return;
             }
             if (sanityResult === 'left-brighter') {
@@ -572,7 +574,7 @@
                 report.hdrTest = { headroom: null, sanityFailed: 'inverted' };
                 updateReport();
                 hdrTestComplete = true;
-                checkShowSubmitButton();
+                updateSubmitButton();
                 return;
             }
 
@@ -725,7 +727,7 @@
                 report.hdrTest = { headroom, transitions: testedPairs.map(p => ({ ...p, result: getResult(p.low, p.high) })) };
                 updateReport();
                 hdrTestComplete = true;
-                checkShowSubmitButton();
+                updateSubmitButton();
             }
         }
 
@@ -829,7 +831,7 @@
                     '<p class="status warning">Gamut test requires WebGPU</p>';
                 report.gamutTest = { unavailable: true };
                 gamutTestComplete = true;
-                checkShowSubmitButton();
+                updateSubmitButton();
                 return;
             }
 
@@ -977,7 +979,7 @@
                 report.gamutTest = { results, p3Working };
                 updateReport();
                 gamutTestComplete = true;
-                checkShowSubmitButton();
+                updateSubmitButton();
             }
         }
 
@@ -1090,8 +1092,10 @@
 
         // ============ Init ============
         async function init() {
-            checkShowSubmitButton(); // Show initial state
+            updateSubmitButton(); // Show initial state
             const caps = await detectCapabilities();
+            capabilitiesDetected = true;
+            updateSubmitButton(); // Enable submit button
             updateReport();
 
             // Run HDR test if supported, otherwise show unavailable message
@@ -1101,7 +1105,7 @@
                 document.getElementById('hdr-unavailable').style.display = 'block';
                 report.hdrTest = { headroom: null, unavailable: true };
                 hdrTestComplete = true;
-                checkShowSubmitButton();
+                updateSubmitButton();
             }
 
             // Run gamut test immediately (don't wait for HDR test)
