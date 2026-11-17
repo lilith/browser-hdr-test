@@ -13,6 +13,12 @@ check-http base:
     curl --fail --silent {{base}}/wasm/ -o /dev/null
     curl --fail --silent {{base}}/wasm/probe.mjs -o /dev/null
 
+check-pages:
+    node scripts/check-pages.mjs
+
+browser-smoke base="https://lilith.github.io/browser-hdr-test/":
+    node scripts/browser-smoke.mjs {{base}}
+
 inventory:
     gh repo list lilith --limit 1000 --json name,description,url,isPrivate --jq '.[] | select((.name + " " + .description) | test("browser|wasm|webassembly"; "i"))'
     gh repo list imazen --limit 1000 --json name,description,url,isPrivate --jq '.[] | select((.name + " " + .description) | test("browser|wasm|webassembly"; "i"))'
