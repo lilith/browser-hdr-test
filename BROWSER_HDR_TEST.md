@@ -2,7 +2,7 @@
 
 Interactive test page for detecting HDR headroom and wide color gamut support in browsers.
 
-**Live Test:** [https://yourusername.github.io/browser-hdr-test/](https://yourusername.github.io/browser-hdr-test/)
+**Live Test:** [https://lilith.github.io/browser-hdr-test/](https://lilith.github.io/browser-hdr-test/)
 
 ## Summary of Findings
 
