@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Relaxed SIMD check</title>
+<style>
+  :root { font: 18px/1.5 system-ui, sans-serif; color-scheme: light dark; }
+  body { max-width: 35rem; margin: 3rem auto; padding: 0 1.25rem; }
+  h1 { font-size: 1.8rem; line-height: 1.2; }
+  #result { font-size: 1.5rem; font-weight: 700; padding: 1rem; border: 2px solid; border-radius: .6rem; }
+  .yes { color: light-dark(#126331, #8be1a7); }
+  .no { color: light-dark(#9c2920, #ffb1a9); }
+  li { margin: .5rem 0; }
+  button { font: inherit; padding: .65rem 1rem; cursor: pointer; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; }
+  summary { cursor: pointer; margin-top: 1.5rem; }
+</style>
+<nav aria-label="Browser tests" style="margin-bottom: 20px; padding: 12px; border: 1px solid #888; border-radius: 8px;">
+  <strong>Browser tests</strong> · <a href="../">HDR &amp; gamut</a> · <a href="../jpeg/">JPEG support</a> · <a href="../wasm/" aria-current="page">WASM SIMD &amp; FMA</a>
+</nav>
+<h1>WebAssembly relaxed SIMD</h1>
+<p>Checks the browser you’re using right now, including on iPhone and iPad.</p>
+<p id="result" role="status" aria-live="polite">Testing…</p>
+<p id="explanation"></p>
+<ul id="checks"></ul>
+<h2>Is multiply-add actually fused?</h2>
+<ul id="fma" aria-live="polite"><li>Testing…</li></ul>
+<p><small>Tests 32-bit and 64-bit relaxed SIMD multiply-add using runtime inputs where
+single rounding gives a tiny nonzero result and separate multiply/add gives zero.
+Both signs are tested repeatedly, with separate SIMD multiply/add as a control.
+Results describe these executions; they do not prove hardware instruction selection
+or guarantee every input or compiler tier behaves the same.</small></p>
+<button id="retry" type="button">Test again</button>
+<details><summary>Technical details</summary><pre id="details"></pre></details>
+<p><small>This runs a tiny WebAssembly module locally. No analytics or external requests.</small></p>
+<noscript>JavaScript must be enabled to run this check.</noscript>
+<script type="module">
+  import { probes, runProbe, runFmaProbe } from './probe.mjs';
+  const result = document.querySelector('#result');
+  const button = document.querySelector('#retry');
+  async function check() {
+    button.disabled = true;
+    result.textContent = 'Testing…';
+    result.className = '';
+    document.querySelector('#fma').textContent = 'Testing…';
+    try {
+      const entries = await Promise.all(Object.entries(probes).map(async ([name, bytes]) => [name, await runProbe(bytes)]));
+      const results = Object.fromEntries(entries);
+      const fma = Object.fromEntries(await Promise.all(['f32', 'f64'].map(async precision => [precision, await runFmaProbe(precision)])));
+      result.textContent = results.relaxed.ok ? 'YES — relaxed SIMD is enabled' : 'NO — relaxed SIMD is unavailable';
+      result.className = results.relaxed.ok ? 'yes' : 'no';
+      document.querySelector('#explanation').textContent = results.relaxed.ok
+        ? 'This browser compiled and executed a relaxed SIMD instruction successfully.'
+        : results.wasm.ok
+          ? 'The relaxed SIMD probe could not run in this browser. See technical details for the error. This result does not distinguish unsupported features from browser restrictions.'
+          : 'Even basic WebAssembly could not run here. Browser settings or security restrictions may be blocking it.';
+      const labels = { wasm: 'Basic WebAssembly', simd: 'Standard SIMD', relaxed: 'Relaxed SIMD' };
+      document.querySelector('#checks').replaceChildren(...entries.map(([name, value]) => {
+        const li = document.createElement('li');
+        li.textContent = `${labels[name]}: ${value.ok ? 'passed' : 'unavailable'}`;
+        return li;
+      }));
+      const fmaLabels = {
+        fused: 'YES — fused results observed on every tested call',
+        unfused: 'NO — separate rounding observed on every tested call',
+        mixed: 'MIXED — both fused and unfused results observed',
+        unexpected: 'UNEXPECTED — results matched neither rounding mode',
+        unavailable: 'UNAVAILABLE — the probe could not run',
+      };
+      document.querySelector('#fma').replaceChildren(...Object.entries(fma).map(([precision, value]) => {
+        const li = document.createElement('li');
+        li.textContent = `${precision === 'f32' ? 'Float32' : 'Float64'}: ${fmaLabels[value.state]}`;
+        return li;
+      }));
+      document.querySelector('#details').textContent = JSON.stringify({
+        checkedAt: new Date().toISOString(), userAgent: navigator.userAgent,
+        instruction: 'i8x16.relaxed_swizzle, followed by lane extraction; expected 42',
+        results, fma,
+      }, null, 2);
+    } catch (error) {
+      result.textContent = 'Test error';
+      document.querySelector('#details').textContent = String(error);
+    } finally { button.disabled = false; }
+  }
+  button.addEventListener('click', check);
+  check();
+</script>
+</html>
