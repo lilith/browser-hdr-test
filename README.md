@@ -29,3 +29,5 @@ fixture bytes, module content type, directory redirects, and the custom 404.
 For browser QA, `just browser-smoke` uses an installed Playwright package
 (`PLAYWRIGHT_MODULE` can select its ESM entry); `BROWSER_ENGINE=webkit` selects
 WebKit instead of Chromium. This is not an iOS device test.
+Set `CHECK_LEGACY_REDIRECTS=1` to include the old JPEG Pages URL; optionally set
+`LEGACY_WASM_URL` to check an existing local WASM server's redirect too.

@@ -8,6 +8,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
+  console.log(`Browser engine: ${browser.browserType().name()} ${browser.version()}`);
   for (const path of ['', 'jpeg/', 'wasm/']) {
     const response = await page.goto(new URL(path, base).href);
     assert.equal(response.status(), 200);
@@ -34,6 +35,17 @@ try {
       }
     }
     console.log(`Browser loaded: ${new URL(path, base)}`);
+  }
+  if (process.env.CHECK_LEGACY_REDIRECTS === '1') {
+    const redirects = [
+      ['https://lilith.github.io/browser-jpeg-support/', new URL('jpeg/', base).href],
+    ];
+    if (process.env.LEGACY_WASM_URL) redirects.push([process.env.LEGACY_WASM_URL, new URL('wasm/', base).href]);
+    for (const [source, destination] of redirects) {
+      await page.goto(source);
+      await page.waitForURL(destination);
+      console.log(`Verified legacy redirect: ${source} -> ${destination}`);
+    }
   }
   assert.deepEqual(errors, [], 'Uncaught browser exceptions');
 } finally {

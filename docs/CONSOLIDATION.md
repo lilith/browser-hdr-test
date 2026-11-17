@@ -21,8 +21,8 @@ the source revision, sizes, and Git blob IDs; `npm test` verifies each copy.
 The imported WASM probe implementation and regression tests retain their source
 bytes. The pages gain suite navigation; numerical and image tests are unchanged.
 
-The source repos retain their history and existing files. Migration notices point
-to this maintained suite after publication. They are not deleted or archived.
+The source repos retain their history and existing fixtures/probe source. Their
+entry pages redirect to this maintained suite. They are not deleted or archived.
 Code and fixture updates belong here.
 
 ## Scope
@@ -35,6 +35,21 @@ applications remain with their own code.
 ## Verification
 
 `npm test` covers local routes and assets, byte-identical JPEG fixtures, and
-WASM execution including fused/unfused controls. Live Pages paths are checked
-after publication. Visual HDR/gamut and JPEG decoder behavior still require
-testing on the actual target browser/device.
+WASM execution including fused/unfused controls.
+
+Verified 2026-11-17, with site content at `d3ae218f`:
+
+- GitHub Pages build and deployment succeeded, using `main` at the root.
+- `just check-pages` matched all three deployed pages, the browser module, and
+  all seven fixtures against their local bytes. Module content type, directory
+  redirects, and the custom 404 passed.
+- `just browser-smoke` passed in Chromium 153.0.8010.12 with a 390 × 844 viewport:
+  navigation loaded, baseline/progressive JPEGs decoded, and SIMD/FMA probes ran
+  without uncaught exceptions. Both Float32 and Float64 reported fused results.
+- Browser navigation from the old JPEG Pages URL and the original WASM local
+  server reached the consolidated tests. The JPEG legacy Pages build succeeded.
+- A WebKit smoke attempt could not launch because `libevent-2.1.so.7` was missing
+  in the local environment. This does not establish WebKit or iOS behavior.
+
+Visual HDR/gamut and iOS JPEG/WASM behavior still require testing on the actual
+target device. No HDR submission was sent during these checks.
