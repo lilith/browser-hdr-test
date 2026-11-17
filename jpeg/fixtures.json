@@ -1,0 +1,41 @@
+{
+  "repository": "https://github.com/lilith/browser-jpeg-support",
+  "commit": "5da381146e806dfbf643f6102c3cc29ddf90b6cf",
+  "files": [
+    {
+      "path": "cmyk_source.jpg",
+      "size": 41079,
+      "gitBlob": "6be256417e20d15058e164fae702aea341269aab"
+    },
+    {
+      "path": "sof0_baseline.jpg",
+      "size": 9877,
+      "gitBlob": "b44cf5b73830ae4ca187213391e30e1215cadcf7"
+    },
+    {
+      "path": "sof1_12bit_real.jpg",
+      "size": 12394,
+      "gitBlob": "861aff98e2a78131bf546b82fd38b00a4f741dd2"
+    },
+    {
+      "path": "sof1_block16.jpg",
+      "size": 3285,
+      "gitBlob": "dccb78464aadd565eb9b7e6062c866f75b8c97f6"
+    },
+    {
+      "path": "sof2_progressive.jpg",
+      "size": 9229,
+      "gitBlob": "1914e7e5d1be75893ebbc355dca8507f89feb0f3"
+    },
+    {
+      "path": "sof9_arithmetic.jpg",
+      "size": 8433,
+      "gitBlob": "060d25e857d506950ed83fa6e74694892423b4e7"
+    },
+    {
+      "path": "testorig_8bit.jpg",
+      "size": 5770,
+      "gitBlob": "9816a0c6231a7c5eaafd445368a9eeb1cffc63df"
+    }
+  ]
+}
